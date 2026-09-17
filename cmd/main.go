@@ -22,7 +22,7 @@ const (
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{AddSource: true}))
 	tidbDSN := flag.String("dsn", "", "Diagnostic TiDB MySQL DSN")
 	httpAddress := flag.String("http-addr", "", "HTTP listen address in host:port form")
 	flag.Usage = func() {
@@ -49,7 +49,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	repository := diagnosis.NewSQLRepository(db)
+	repository := diagnosis.NewSQLRepository(db, logger)
 	validator := diagnosis.NewValidator(repository)
 	handler := diagnosis.NewHandler(validator, logger)
 

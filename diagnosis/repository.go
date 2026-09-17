@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -17,6 +18,8 @@ const (
 	slowQueryQuery = `SELECT COALESCE(db, ''), query
 FROM information_schema.slow_query
 WHERE is_internal = FALSE AND query IS NOT NULL AND query <> ''
+  AND LOWER(query) NOT LIKE '%information_schema.slow_query%'
+  AND LOWER(query) NOT LIKE '%information_schema.statements_summary%'
 ORDER BY RAND()
 LIMIT ?`
 
@@ -25,6 +28,9 @@ FROM (
     SELECT COALESCE(schema_name, '') AS schema_name, query_sample_text
     FROM information_schema.statements_summary
     WHERE query_sample_text IS NOT NULL AND query_sample_text <> ''
+      AND LOWER(stmt_type) IN ('select', 'insert', 'update', 'delete', 'replace')
+      AND LOWER(query_sample_text) NOT LIKE '%information_schema.slow_query%'
+      AND LOWER(query_sample_text) NOT LIKE '%information_schema.statements_summary%'
     ORDER BY sum_latency DESC
     LIMIT 100
 ) AS top_statements
@@ -34,6 +40,9 @@ LIMIT ?`
 	statementSummaryQuery = `SELECT COALESCE(schema_name, ''), query_sample_text
 FROM information_schema.statements_summary
 WHERE query_sample_text IS NOT NULL AND query_sample_text <> ''
+  AND LOWER(stmt_type) IN ('select', 'insert', 'update', 'delete', 'replace')
+  AND LOWER(query_sample_text) NOT LIKE '%information_schema.slow_query%'
+  AND LOWER(query_sample_text) NOT LIKE '%information_schema.statements_summary%'
 ORDER BY RAND()
 LIMIT ?`
 )
@@ -50,7 +59,8 @@ type Repository interface {
 }
 
 type SQLRepository struct {
-	db *sql.DB
+	db     *sql.DB
+	logger *slog.Logger
 }
 
 func OpenDB(dsn string) (*sql.DB, error) {
@@ -65,8 +75,8 @@ func OpenDB(dsn string) (*sql.DB, error) {
 	return db, nil
 }
 
-func NewSQLRepository(db *sql.DB) *SQLRepository {
-	return &SQLRepository{db: db}
+func NewSQLRepository(db *sql.DB, logger *slog.Logger) *SQLRepository {
+	return &SQLRepository{db: db, logger: logger}
 }
 
 func (r *SQLRepository) Sample(ctx context.Context, source Source, limit int) ([]Sample, error) {
@@ -76,6 +86,7 @@ func (r *SQLRepository) Sample(ctx context.Context, source Source, limit int) ([
 	if !ok {
 		return nil, fmt.Errorf("unsupported source %q", source)
 	}
+	r.logger.Info("execute SQL", "source", source, "sql", query, "limit", limit)
 	rows, err := r.db.QueryContext(queryCtx, query, limit)
 	if err != nil {
 		return nil, fmt.Errorf("query %s: %w", source, err)
@@ -110,14 +121,18 @@ func (r *SQLRepository) Explain(ctx context.Context, sample Sample) error {
 
 	if sample.Schema != "" {
 		quotedSchema := "`" + strings.ReplaceAll(sample.Schema, "`", "``") + "`"
-		if _, err := conn.ExecContext(explainCtx, "USE "+quotedSchema); err != nil {
+		useSQL := "USE " + quotedSchema
+		r.logger.Info("execute SQL", "schema", sample.Schema, "sql", useSQL)
+		if _, err := conn.ExecContext(explainCtx, useSQL); err != nil {
 			return fmt.Errorf("select schema %q: %w", sample.Schema, err)
 		}
 	}
 
 	statement := strings.TrimSpace(sample.SQL)
 	statement = strings.TrimSuffix(statement, ";")
-	rows, err := conn.QueryContext(explainCtx, "EXPLAIN "+statement)
+	explainSQL := "EXPLAIN " + statement
+	r.logger.Info("execute SQL", "schema", sample.Schema, "sql", explainSQL)
+	rows, err := conn.QueryContext(explainCtx, explainSQL)
 	if err != nil {
 		return fmt.Errorf("explain statement: %w", err)
 	}

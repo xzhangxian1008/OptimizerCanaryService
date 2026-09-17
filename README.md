@@ -61,7 +61,9 @@ go run ./cmd \
 The sources, sample count, connection pool, and service-side timeouts are fixed
 for this M1 link validation. Because TiDB does not expose Top SQL as a SQL system
 table, `top_sql` is sampled from the 100 `STATEMENTS_SUMMARY` entries with the
-greatest cumulative latency.
+greatest cumulative latency. Every source query, `USE`, and `EXPLAIN` statement
+is written to the structured service log, including the sampled SQL text and
+the function, file, and line that emitted the log.
 
 ## Test
 
