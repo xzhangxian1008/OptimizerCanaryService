@@ -44,7 +44,7 @@ Pass the Diagnostic TiDB DSN and HTTP listen address as named command-line
 arguments:
 
 ```bash
-go run ./cmd/diagnostic-service \
+go run ./cmd \
   -dsn 'root@tcp(127.0.0.1:4000)/' \
   -http-addr '127.0.0.1:8080'
 ```
@@ -53,7 +53,7 @@ The DSN can include the username, password, network, TiDB address, default
 database, TLS, and driver timeouts. For example:
 
 ```bash
-go run ./cmd/diagnostic-service \
+go run ./cmd \
   -dsn 'diagnostic_user:password@tcp(tidb.example.com:4000)/?tls=true&timeout=5s&readTimeout=15s&writeTimeout=15s' \
   -http-addr '127.0.0.1:8080'
 ```

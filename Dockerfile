@@ -3,7 +3,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /diagnostic-service ./cmd/diagnostic-service
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /diagnostic-service ./cmd
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /diagnostic-service /diagnostic-service

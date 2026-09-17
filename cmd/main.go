@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/xzhangxian1008/OptimizerCanaryService/internal/diagnosis"
+	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis"
 )
 
 const (
