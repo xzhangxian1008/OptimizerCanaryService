@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis"
+	"go.uber.org/zap"
 )
 
 const (
@@ -22,7 +22,13 @@ const (
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{AddSource: true}))
+	logger, err := zap.NewDevelopment()
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "initialize logger: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() { _ = logger.Sync() }()
+
 	tidbDSN := flag.String("dsn", "", "Diagnostic TiDB MySQL DSN")
 	httpAddress := flag.String("http-addr", "", "HTTP listen address in host:port form")
 	flag.Usage = func() {
@@ -37,7 +43,7 @@ func main() {
 
 	db, err := diagnosis.OpenDB(*tidbDSN)
 	if err != nil {
-		logger.Error("open TiDB connection", "error", err)
+		logger.Error("open TiDB connection", zap.Error(err))
 		os.Exit(1)
 	}
 	defer db.Close()
@@ -45,7 +51,7 @@ func main() {
 	startupCtx, startupCancel := context.WithTimeout(context.Background(), dbPingTimeout)
 	defer startupCancel()
 	if err := db.PingContext(startupCtx); err != nil {
-		logger.Error("connect to Diagnostic TiDB", "error", err)
+		logger.Error("connect to Diagnostic TiDB", zap.Error(err))
 		os.Exit(1)
 	}
 
@@ -77,13 +83,13 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := server.Shutdown(ctx); err != nil {
-			logger.Error("shut down HTTP server", "error", err)
+			logger.Error("shut down HTTP server", zap.Error(err))
 		}
 	}()
 
-	logger.Info("Diagnostic Service started", "address", *httpAddress)
+	logger.Info("Diagnostic Service started", zap.String("address", *httpAddress))
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		logger.Error("serve HTTP", "error", err)
+		logger.Error("serve HTTP", zap.Error(err))
 		os.Exit(1)
 	}
 }

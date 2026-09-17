@@ -2,17 +2,17 @@ package diagnosis
 
 import (
 	"errors"
-	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"go.uber.org/zap"
 )
 
 func TestHandlerValidatesAllSources(t *testing.T) {
 	repo := &fakeRepository{samples: []Sample{{SQL: "select 1"}, {SQL: "select 2"}, {SQL: "select 3"}}}
-	handler := NewHandler(NewValidator(repo), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler := NewHandler(NewValidator(repo), zap.NewNop())
 	request := httptest.NewRequest(http.MethodPost, "/validate", nil)
 	response := httptest.NewRecorder()
 
@@ -33,7 +33,7 @@ func TestHandlerValidatesAllSources(t *testing.T) {
 }
 
 func TestHandlerReturnsUnprocessableEntityOnFailure(t *testing.T) {
-	handler := NewHandler(NewValidator(&fakeRepository{sampleErr: errors.New("unavailable")}), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler := NewHandler(NewValidator(&fakeRepository{sampleErr: errors.New("unavailable")}), zap.NewNop())
 	request := httptest.NewRequest(http.MethodPost, "/validate", nil)
 	response := httptest.NewRecorder()
 

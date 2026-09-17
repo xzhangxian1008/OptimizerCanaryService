@@ -4,11 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+	"go.uber.org/zap"
 )
 
 const (
@@ -60,7 +60,7 @@ type Repository interface {
 
 type SQLRepository struct {
 	db     *sql.DB
-	logger *slog.Logger
+	logger *zap.Logger
 }
 
 func OpenDB(dsn string) (*sql.DB, error) {
@@ -75,7 +75,7 @@ func OpenDB(dsn string) (*sql.DB, error) {
 	return db, nil
 }
 
-func NewSQLRepository(db *sql.DB, logger *slog.Logger) *SQLRepository {
+func NewSQLRepository(db *sql.DB, logger *zap.Logger) *SQLRepository {
 	return &SQLRepository{db: db, logger: logger}
 }
 
@@ -86,7 +86,11 @@ func (r *SQLRepository) Sample(ctx context.Context, source Source, limit int) ([
 	if !ok {
 		return nil, fmt.Errorf("unsupported source %q", source)
 	}
-	r.logger.Info("execute SQL", "source", source, "sql", query, "limit", limit)
+	r.logger.Info("execute SQL",
+		zap.String("source", string(source)),
+		zap.String("sql", query),
+		zap.Int("limit", limit),
+	)
 	rows, err := r.db.QueryContext(queryCtx, query, limit)
 	if err != nil {
 		return nil, fmt.Errorf("query %s: %w", source, err)
@@ -122,7 +126,10 @@ func (r *SQLRepository) Explain(ctx context.Context, sample Sample) error {
 	if sample.Schema != "" {
 		quotedSchema := "`" + strings.ReplaceAll(sample.Schema, "`", "``") + "`"
 		useSQL := "USE " + quotedSchema
-		r.logger.Info("execute SQL", "schema", sample.Schema, "sql", useSQL)
+		r.logger.Info("execute SQL",
+			zap.String("schema", sample.Schema),
+			zap.String("sql", useSQL),
+		)
 		if _, err := conn.ExecContext(explainCtx, useSQL); err != nil {
 			return fmt.Errorf("select schema %q: %w", sample.Schema, err)
 		}
@@ -131,7 +138,10 @@ func (r *SQLRepository) Explain(ctx context.Context, sample Sample) error {
 	statement := strings.TrimSpace(sample.SQL)
 	statement = strings.TrimSuffix(statement, ";")
 	explainSQL := "EXPLAIN " + statement
-	r.logger.Info("execute SQL", "schema", sample.Schema, "sql", explainSQL)
+	r.logger.Info("execute SQL",
+		zap.String("schema", sample.Schema),
+		zap.String("sql", explainSQL),
+	)
 	rows, err := conn.QueryContext(explainCtx, explainSQL)
 	if err != nil {
 		return fmt.Errorf("explain statement: %w", err)

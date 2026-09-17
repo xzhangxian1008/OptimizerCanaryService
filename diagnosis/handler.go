@@ -2,16 +2,17 @@ package diagnosis
 
 import (
 	"encoding/json"
-	"log/slog"
 	"net/http"
+
+	"go.uber.org/zap"
 )
 
 type Handler struct {
 	validator *Validator
-	logger    *slog.Logger
+	logger    *zap.Logger
 }
 
-func NewHandler(validator *Validator, logger *slog.Logger) *Handler {
+func NewHandler(validator *Validator, logger *zap.Logger) *Handler {
 	return &Handler{validator: validator, logger: logger}
 }
 
@@ -21,7 +22,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if response.Status == "failed" {
 		status = http.StatusUnprocessableEntity
 	}
-	h.logger.Info("validation completed", "status", response.Status, "reason", response.Reason)
+	h.logger.Info("validation completed",
+		zap.String("status", response.Status),
+		zap.String("reason", response.Reason),
+	)
 	writeJSON(w, status, response)
 }
 
