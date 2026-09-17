@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -22,13 +23,19 @@ const (
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	if len(os.Args) != 2 {
-		_, _ = fmt.Fprintf(os.Stderr, "usage: %s <tidb-dsn>\n", os.Args[0])
+	tidbDSN := flag.String("dsn", "", "Diagnostic TiDB MySQL DSN")
+	httpAddress := flag.String("http-addr", "", "HTTP listen address in host:port form")
+	flag.Usage = func() {
+		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "usage: %s -dsn <tidb-dsn> -http-addr <host:port>\n", os.Args[0])
+		flag.PrintDefaults()
+	}
+	flag.Parse()
+	if *tidbDSN == "" || *httpAddress == "" || flag.NArg() != 0 {
+		flag.Usage()
 		os.Exit(1)
 	}
-	tidbDSN := os.Args[1]
 
-	db, err := diagnosis.OpenDB(tidbDSN)
+	db, err := diagnosis.OpenDB(*tidbDSN)
 	if err != nil {
 		logger.Error("open TiDB connection", "error", err)
 		os.Exit(1)
@@ -55,7 +62,7 @@ func main() {
 	})
 
 	server := &http.Server{
-		Addr:              ":8080",
+		Addr:              *httpAddress,
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       httpReadTimeout,
@@ -74,7 +81,7 @@ func main() {
 		}
 	}()
 
-	logger.Info("Diagnostic Service started", "address", ":8080")
+	logger.Info("Diagnostic Service started", "address", *httpAddress)
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		logger.Error("serve HTTP", "error", err)
 		os.Exit(1)
