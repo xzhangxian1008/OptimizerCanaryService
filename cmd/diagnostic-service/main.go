@@ -23,12 +23,12 @@ const (
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	if len(os.Args) != 2 {
-		_, _ = fmt.Fprintf(os.Stderr, "usage: %s <tidb-host:port>\n", os.Args[0])
+		_, _ = fmt.Fprintf(os.Stderr, "usage: %s <tidb-dsn>\n", os.Args[0])
 		os.Exit(1)
 	}
-	tidbAddress := os.Args[1]
+	tidbDSN := os.Args[1]
 
-	db, err := diagnosis.OpenDB(tidbAddress)
+	db, err := diagnosis.OpenDB(tidbDSN)
 	if err != nil {
 		logger.Error("open TiDB connection", "error", err)
 		os.Exit(1)
@@ -74,7 +74,7 @@ func main() {
 		}
 	}()
 
-	logger.Info("Diagnostic Service started", "address", ":8080", "tidb_address", tidbAddress)
+	logger.Info("Diagnostic Service started", "address", ":8080")
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		logger.Error("serve HTTP", "error", err)
 		os.Exit(1)

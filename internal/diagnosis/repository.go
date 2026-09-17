@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-sql-driver/mysql"
+	_ "github.com/go-sql-driver/mysql"
 )
 
 const (
@@ -53,12 +53,8 @@ type SQLRepository struct {
 	db *sql.DB
 }
 
-func OpenDB(address string) (*sql.DB, error) {
-	cfg := mysql.NewConfig()
-	cfg.User = "root"
-	cfg.Net = "tcp"
-	cfg.Addr = address
-	db, err := sql.Open("mysql", cfg.FormatDSN())
+func OpenDB(dsn string) (*sql.DB, error) {
+	db, err := sql.Open("mysql", dsn)
 	if err != nil {
 		return nil, err
 	}

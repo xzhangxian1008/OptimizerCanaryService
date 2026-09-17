@@ -40,17 +40,24 @@ invalid initial connection.
 
 ## Run
 
-Pass the Diagnostic TiDB address as the only command-line argument:
+Pass the Diagnostic TiDB DSN as the only command-line argument:
 
 ```bash
-go run ./cmd/diagnostic-service 127.0.0.1:4000
+go run ./cmd/diagnostic-service 'root@tcp(127.0.0.1:4000)/'
 ```
 
-The service listens on `:8080` and connects as TiDB's default `root` user without
-a password. The sources, sample count, connection pool, and timeouts are fixed
-for this M1 link validation. Because TiDB does not expose Top SQL as a SQL system
-table, `top_sql` is sampled from the 100 `STATEMENTS_SUMMARY` entries with the
-greatest cumulative latency.
+The DSN can include the username, password, network, TiDB address, default
+database, TLS, and driver timeouts. For example:
+
+```bash
+go run ./cmd/diagnostic-service \
+  'diagnostic_user:password@tcp(tidb.example.com:4000)/?tls=true&timeout=5s&readTimeout=15s&writeTimeout=15s'
+```
+
+The service listens on `:8080`. The sources, sample count, connection pool, and
+service-side timeouts are fixed for this M1 link validation. Because TiDB does
+not expose Top SQL as a SQL system table, `top_sql` is sampled from the 100
+`STATEMENTS_SUMMARY` entries with the greatest cumulative latency.
 
 ## Test
 
