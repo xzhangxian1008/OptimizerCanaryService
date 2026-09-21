@@ -4,7 +4,7 @@ set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly BINARY="${SCRIPT_DIR}/diagnostic-service"
-readonly TIDB_DSN='root@tcp(127.0.0.1:4000)/'
+readonly CONFIG_FILE="${SCRIPT_DIR}/config.example.toml"
 readonly HTTP_ADDR='127.0.0.1:8080'
 readonly BASE_URL="http://${HTTP_ADDR}"
 
@@ -25,7 +25,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 "${BINARY}" \
-  -dsn "${TIDB_DSN}" \
+  -config "${CONFIG_FILE}" \
   -http-addr "${HTTP_ADDR}" >"${LOG_FILE}" 2>&1 &
 SERVICE_PID=$!
 

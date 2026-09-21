@@ -49,6 +49,23 @@ go run ./cmd \
   -http-addr '127.0.0.1:8080'
 ```
 
+To load the TiDB connection from a TOML file instead, create `config.toml`:
+
+```toml
+[tidb]
+dsn = "root@tcp(127.0.0.1:4000)/"
+```
+
+Then start the service with the file path and HTTP listen address:
+
+```bash
+go run ./cmd -config config.toml -http-addr '127.0.0.1:8080'
+```
+
+`-config` and `-dsn` are alternative ways to supply the same connection string;
+specify exactly one. See `config.example.toml` for a local example. Keep real
+credentials out of version control.
+
 The DSN can include the username, password, network, TiDB address, default
 database, TLS, and driver timeouts. For example:
 
