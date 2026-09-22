@@ -3,7 +3,6 @@ module github.com/xzhangxian1008/OptimizerCanaryService
 go 1.23
 
 require (
-	github.com/BurntSushi/toml v1.5.0
 	github.com/go-sql-driver/mysql v1.9.3
 	go.uber.org/zap v1.28.0
 )

@@ -34,16 +34,16 @@ completed up to that point.
 
 ### `GET /healthz`
 
-Returns HTTP 200 while the HTTP process is running. If a startup DSN or config
-is provided, startup also verifies the Diagnostic TiDB connection.
+Returns HTTP 200 while the HTTP process is running. It does not report whether
+a TiDB connection has been configured.
 
 ### `POST /test/connect` (temporary test endpoint)
 
-This endpoint is provided for testing and is planned for removal in a future
-release. It accepts a TiDB MySQL DSN after the service has started:
+This endpoint is currently used to configure the active TiDB connection after
+the service has started. It accepts a TiDB MySQL DSN:
 
 ```bash
-curl -sS -X POST http://127.0.0.1:8090/test/connect \
+curl -sS -X POST http://127.0.0.1:8080/test/connect \
   -H 'Content-Type: application/json' \
   -d '{"dsn":"root@tcp(127.0.0.1:4000)/"}'
 ```
@@ -68,41 +68,28 @@ connection unchanged.
 
 ## Run
 
-Pass the Diagnostic TiDB DSN and HTTP listen address as named command-line
-arguments:
+Pass the HTTP listen address as a named command-line argument:
 
 ```bash
-go run ./cmd \
-  -dsn 'root@tcp(127.0.0.1:4000)/' \
-  -http-addr '127.0.0.1:8080'
+go run ./cmd -http-addr '127.0.0.1:8080'
 ```
 
-To load the TiDB connection from a TOML file instead, create `config.toml`:
-
-```toml
-[tidb]
-dsn = "root@tcp(127.0.0.1:4000)/"
-```
-
-Then start the service with the file path and HTTP listen address:
+The service starts without a TiDB connection. Configure it through HTTP before
+calling `POST /validate`:
 
 ```bash
-go run ./cmd -config config.toml -http-addr '127.0.0.1:8080'
+curl -sS -X POST http://127.0.0.1:8080/test/connect \
+  -H 'Content-Type: application/json' \
+  -d '{"dsn":"root@tcp(127.0.0.1:4000)/"}'
 ```
-
-`-config` and `-dsn` are alternative ways to supply the same connection string;
-specify at most one. If neither is provided, the service starts without a TiDB
-connection; use the temporary `POST /test/connect` endpoint to configure one.
-See `config.example.toml` for a local example. Keep real credentials out of
-version control.
 
 The DSN can include the username, password, network, TiDB address, default
 database, TLS, and driver timeouts. For example:
 
 ```bash
-go run ./cmd \
-  -dsn 'diagnostic_user:password@tcp(tidb.example.com:4000)/?tls=true&timeout=5s&readTimeout=15s&writeTimeout=15s' \
-  -http-addr '127.0.0.1:8080'
+curl -sS -X POST http://127.0.0.1:8080/test/connect \
+  -H 'Content-Type: application/json' \
+  -d '{"dsn":"diagnostic_user:password@tcp(tidb.example.com:4000)/?tls=true&timeout=5s&readTimeout=15s&writeTimeout=15s"}'
 ```
 
 The sources, sample count, connection pool, and service-side timeouts are fixed
@@ -129,8 +116,7 @@ docker buildx create --name optimizer-canary-builder --driver docker-container -
 docker buildx inspect --bootstrap
 ```
 
-Build and push an image containing the service binary at `/diagnostic-service`
-and the `/etc/diagnostic-service` directory:
+Build and push an image containing the service binary at `/diagnostic-service`:
 
 ```bash
 docker login <registry>

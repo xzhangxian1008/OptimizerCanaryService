@@ -4,9 +4,9 @@ set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly BINARY="${SCRIPT_DIR}/diagnostic-service"
-readonly CONFIG_FILE="${SCRIPT_DIR}/config.example.toml"
 readonly HTTP_ADDR='127.0.0.1:8080'
 readonly BASE_URL="http://${HTTP_ADDR}"
+readonly TIDB_DSN='root@tcp(127.0.0.1:4000)/'
 
 if [[ ! -x "${BINARY}" ]]; then
   echo "diagnostic-service is missing; run 'go build -o diagnostic-service ./cmd' first" >&2
@@ -24,9 +24,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-"${BINARY}" \
-  -config "${CONFIG_FILE}" \
-  -http-addr "${HTTP_ADDR}" >"${LOG_FILE}" 2>&1 &
+"${BINARY}" -http-addr "${HTTP_ADDR}" >"${LOG_FILE}" 2>&1 &
 SERVICE_PID=$!
 
 for _ in {1..50}; do
@@ -47,9 +45,16 @@ if ! curl --silent --fail "${BASE_URL}/healthz" >/dev/null; then
   exit 1
 fi
 
+CONNECT_RESPONSE="$(curl --silent --show-error --fail-with-body \
+  --request POST \
+  --header 'Content-Type: application/json' \
+  --data "{\"dsn\":\"${TIDB_DSN}\"}" \
+  "${BASE_URL}/test/connect")"
+
 HTTP_RESPONSE="$(curl --silent --show-error \
   --request POST \
   "${BASE_URL}/validate")"
 
 cat "${LOG_FILE}"
+printf '%s\n' "${CONNECT_RESPONSE}"
 printf '%s\n' "${HTTP_RESPONSE}"

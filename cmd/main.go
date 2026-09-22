@@ -11,44 +11,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/BurntSushi/toml"
 	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis"
 	"go.uber.org/zap"
 )
 
 const (
-	dbPingTimeout    = 5 * time.Second
 	httpReadTimeout  = 10 * time.Second
 	httpWriteTimeout = 60 * time.Second
 )
-
-type fileConfig struct {
-	TiDB struct {
-		DSN string `toml:"dsn"`
-	} `toml:"tidb"`
-}
-
-func resolveTiDBDSN(commandLineDSN, configPath string) (string, error) {
-	if commandLineDSN != "" && configPath != "" {
-		return "", errors.New("-dsn and -config cannot be used together")
-	}
-	if configPath == "" {
-		return commandLineDSN, nil
-	}
-
-	var config fileConfig
-	metadata, err := toml.DecodeFile(configPath, &config)
-	if err != nil {
-		return "", fmt.Errorf("read config %q: %w", configPath, err)
-	}
-	if unknown := metadata.Undecoded(); len(unknown) != 0 {
-		return "", fmt.Errorf("unknown config key %q", unknown[0])
-	}
-	if config.TiDB.DSN == "" {
-		return "", errors.New("config must contain a non-empty [tidb] dsn")
-	}
-	return config.TiDB.DSN, nil
-}
 
 func main() {
 	logger, err := zap.NewDevelopment()
@@ -58,11 +28,9 @@ func main() {
 	}
 	defer func() { _ = logger.Sync() }()
 
-	tidbDSN := flag.String("dsn", "", "Diagnostic TiDB MySQL DSN")
-	configPath := flag.String("config", "", "TOML config file containing the Diagnostic TiDB DSN")
 	httpAddress := flag.String("http-addr", "", "HTTP listen address in host:port form")
 	flag.Usage = func() {
-		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "usage: %s [-dsn <tidb-dsn> | -config <file.toml>] -http-addr <host:port>\n", os.Args[0])
+		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "usage: %s -http-addr <host:port>\n", os.Args[0])
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -70,24 +38,8 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
-	resolvedDSN, err := resolveTiDBDSN(*tidbDSN, *configPath)
-	if err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, err)
-		flag.Usage()
-		os.Exit(1)
-	}
-
 	connections := diagnosis.NewConnectionManager(logger)
 	defer connections.Close()
-	if resolvedDSN != "" {
-		startupCtx, startupCancel := context.WithTimeout(context.Background(), dbPingTimeout)
-		startup := connections.Replace(startupCtx, resolvedDSN)
-		startupCancel()
-		if !startup.Connected {
-			logger.Error("connect to Diagnostic TiDB", zap.Error(startup.Err))
-			os.Exit(1)
-		}
-	}
 
 	validator := diagnosis.NewValidator(connections)
 	handler := diagnosis.NewHandler(validator, logger)
