@@ -33,9 +33,6 @@ func resolveTiDBDSN(commandLineDSN, configPath string) (string, error) {
 		return "", errors.New("-dsn and -config cannot be used together")
 	}
 	if configPath == "" {
-		if commandLineDSN == "" {
-			return "", errors.New("either -dsn or -config is required")
-		}
 		return commandLineDSN, nil
 	}
 
@@ -65,7 +62,7 @@ func main() {
 	configPath := flag.String("config", "", "TOML config file containing the Diagnostic TiDB DSN")
 	httpAddress := flag.String("http-addr", "", "HTTP listen address in host:port form")
 	flag.Usage = func() {
-		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "usage: %s (-dsn <tidb-dsn> | -config <file.toml>) -http-addr <host:port>\n", os.Args[0])
+		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "usage: %s [-dsn <tidb-dsn> | -config <file.toml>] -http-addr <host:port>\n", os.Args[0])
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -80,26 +77,25 @@ func main() {
 		os.Exit(1)
 	}
 
-	db, err := diagnosis.OpenDB(resolvedDSN)
-	if err != nil {
-		logger.Error("open TiDB connection", zap.Error(err))
-		os.Exit(1)
-	}
-	defer db.Close()
-
-	startupCtx, startupCancel := context.WithTimeout(context.Background(), dbPingTimeout)
-	defer startupCancel()
-	if err := db.PingContext(startupCtx); err != nil {
-		logger.Error("connect to Diagnostic TiDB", zap.Error(err))
-		os.Exit(1)
+	connections := diagnosis.NewConnectionManager(logger)
+	defer connections.Close()
+	if resolvedDSN != "" {
+		startupCtx, startupCancel := context.WithTimeout(context.Background(), dbPingTimeout)
+		startup := connections.Replace(startupCtx, resolvedDSN)
+		startupCancel()
+		if !startup.Connected {
+			logger.Error("connect to Diagnostic TiDB", zap.Error(startup.Err))
+			os.Exit(1)
+		}
 	}
 
-	repository := diagnosis.NewSQLRepository(db, logger)
-	validator := diagnosis.NewValidator(repository)
+	validator := diagnosis.NewValidator(connections)
 	handler := diagnosis.NewHandler(validator, logger)
+	connectionHandler := diagnosis.NewConnectionHandler(connections, logger)
 
 	mux := http.NewServeMux()
 	mux.Handle("POST /validate", handler)
+	mux.Handle("POST /test/connect", connectionHandler)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)

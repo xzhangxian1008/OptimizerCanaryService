@@ -27,4 +27,7 @@ FROM ${BASE_IMAGE}
 COPY --from=build /image-root/ /
 EXPOSE 8080
 ENTRYPOINT ["/diagnostic-service"]
-CMD ["-config", "/etc/diagnostic-service/config.toml"]
+
+# For test
+CMD ["-http-addr", "0.0.0.0:8080"]
+# CMD ["-config", "/etc/diagnostic-service/config.toml", "-http-addr", "0.0.0.0:8080"]

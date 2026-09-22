@@ -26,7 +26,7 @@ func TestResolveTiDBDSN(t *testing.T) {
 	for _, tc := range []struct {
 		name, dsn, contents, wantError string
 	}{
-		{name: "missing source", wantError: "either -dsn or -config is required"},
+		{name: "missing source"},
 		{name: "both sources", dsn: "root@tcp(localhost:4000)/", contents: "[tidb]\ndsn = 'root@tcp(127.0.0.1:4000)/'\n", wantError: "cannot be used together"},
 		{name: "missing DSN", contents: "[tidb]\n", wantError: "non-empty [tidb] dsn"},
 		{name: "unknown key", contents: "[tidb]\naddress = '127.0.0.1:4000'\n", wantError: "unknown config key"},
@@ -37,7 +37,13 @@ func TestResolveTiDBDSN(t *testing.T) {
 			if tc.contents != "" {
 				path = writeConfig(t, tc.contents)
 			}
-			_, err := resolveTiDBDSN(tc.dsn, path)
+			got, err := resolveTiDBDSN(tc.dsn, path)
+			if tc.wantError == "" {
+				if err != nil || got != "" {
+					t.Fatalf("resolveTiDBDSN() = %q, %v, want empty DSN without error", got, err)
+				}
+				return
+			}
 			if err == nil || !strings.Contains(err.Error(), tc.wantError) {
 				t.Fatalf("resolveTiDBDSN() error = %v, want %q", err, tc.wantError)
 			}

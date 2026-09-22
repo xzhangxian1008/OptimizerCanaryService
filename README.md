@@ -34,9 +34,37 @@ completed up to that point.
 
 ### `GET /healthz`
 
-Returns HTTP 200 while the HTTP process is running. Startup also verifies the
-Diagnostic TiDB connection, so the process does not become healthy with an
-invalid initial connection.
+Returns HTTP 200 while the HTTP process is running. If a startup DSN or config
+is provided, startup also verifies the Diagnostic TiDB connection.
+
+### `POST /test/connect` (temporary test endpoint)
+
+This endpoint is provided for testing and is planned for removal in a future
+release. It accepts a TiDB MySQL DSN after the service has started:
+
+```bash
+curl -sS -X POST http://127.0.0.1:8090/test/connect \
+  -H 'Content-Type: application/json' \
+  -d '{"dsn":"root@tcp(127.0.0.1:4000)/"}'
+```
+
+The response includes the connection information and result:
+
+```json
+{
+  "status": "success",
+  "message": "TiDB connection established and is now active",
+  "warning": "TEST ONLY: this endpoint will be removed in a future release",
+  "dsn": "root@tcp(127.0.0.1:4000)/",
+  "connected": true
+}
+```
+
+If the connection succeeds, it becomes the active connection used by
+`POST /validate`, and the previous connection is closed. The response reports
+the DSN, whether the connection succeeded, and includes a warning that this is
+a temporary test endpoint. A failed replacement leaves the current active
+connection unchanged.
 
 ## Run
 
@@ -63,8 +91,10 @@ go run ./cmd -config config.toml -http-addr '127.0.0.1:8080'
 ```
 
 `-config` and `-dsn` are alternative ways to supply the same connection string;
-specify exactly one. See `config.example.toml` for a local example. Keep real
-credentials out of version control.
+specify at most one. If neither is provided, the service starts without a TiDB
+connection; use the temporary `POST /test/connect` endpoint to configure one.
+See `config.example.toml` for a local example. Keep real credentials out of
+version control.
 
 The DSN can include the username, password, network, TiDB address, default
 database, TLS, and driver timeouts. For example:
