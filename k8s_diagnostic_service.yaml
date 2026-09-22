@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: diagnostic-service
+  namespace: tidb638444168208753846
+  labels:
+    app: diagnostic-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: diagnostic-service
+  template:
+    metadata:
+      labels:
+        app: diagnostic-service
+    spec:
+      terminationGracePeriodSeconds: 15
+      containers:
+        - name: diagnostic-service
+          image: xuzhangxian/canary:v1
+          imagePullPolicy: Always
+          args:
+            - -http-addr
+            - 0.0.0.0:8080
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: diagnostic-service
+  namespace: tidb638444168208753846
+  labels:
+    app: diagnostic-service
+spec:
+  type: ClusterIP
+  selector:
+    app: diagnostic-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
