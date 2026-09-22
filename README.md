@@ -87,3 +87,30 @@ text and source location.
 ```bash
 go test ./...
 ```
+
+## Build a multi-architecture image
+
+The short Docker image ID such as `4894a507a4ae` identifies one local image and one architecture. Use the corresponding multi-architecture repository tag when building; Buildx will select the correct base image for every target platform.
+
+Create and bootstrap a Buildx builder once:
+
+```bash
+docker buildx create --name optimizer-canary-builder --driver docker-container --use
+docker buildx inspect --bootstrap
+```
+
+Build and push an image containing the service binary at `/diagnostic-service`
+and the `/etc/diagnostic-service` directory:
+
+```bash
+docker login <registry>
+docker buildx build \
+  --platform linux/amd64,linux/arm64 \
+  --build-arg BASE_IMAGE=rockylinux/rockylinux:9-ubi-micro \
+  --tag <registry>/<namespace>/optimizer-canary-service:latest \
+  --push .
+```
+
+The Dockerfile cross-compiles the Go service with `CGO_ENABLED=0` for each
+target architecture. `--push` publishes one multi-architecture tag; a local
+`--load` can load only one platform at a time.
