@@ -1,0 +1,216 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: diagnostic-tidb
+  namespace: tidb638547848299848052
+  labels:
+    app: diagnostic-tidb
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: diagnostic-tidb
+  # 使用 hostNetwork/hostPort 时，更新期间同时运行两个 Pod 可能发生端口冲突。
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: diagnostic-tidb
+    spec:
+      # 沿用原 TiDB Deployment。若新镜像来自不同仓库且不依赖该身份，可以删除。
+      serviceAccountName: tidb-cluster
+
+      # 沿用原 TiDB 的网络模式，减少 PD/TiKV 网络连通性差异。
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      terminationGracePeriodSeconds: 3
+
+      containers:
+        - name: tidb
+          # TODO/BLOCKER: 替换成特殊 TiDB 的完整镜像地址和不可变 tag/digest。
+          # 使用 example.invalid 是为了防止误 apply 后拉取到错误镜像。
+          image: us-docker.pkg.dev/pingcap-testing-account/dev/pingcap/tidb/images/tidb-server:pull-71394-0bcf324-nextgen
+          imagePullPolicy: Always
+
+          # TODO/BLOCKER: 用特殊 TiDB 的真实启动命令替换下面整个 command/args。
+          # 使用 shell 是为了允许在参数中引用 ${POD_IP}/${POD_NAME}/${NAMESPACE}。
+          command:
+            - /tidb-server
+            -  --config
+            - /etc/tidb/config.toml
+            - --diagnostic-mode
+            - --standby=false
+          env:
+            - name: TZ
+              value: UTC
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+
+          ports:
+            - name: mysql-client
+              containerPort: 4000
+              hostPort: 4000
+              protocol: TCP
+            - name: status
+              containerPort: 10080
+              hostPort: 10080
+              protocol: TCP
+
+          readinessProbe:
+            exec:
+              command:
+                - curl
+                - --cacert
+                - /var/lib/tidb-tls/ca.crt
+                - --cert
+                - /var/lib/tidb-tls/tls.crt
+                - --key
+                - /var/lib/tidb-tls/tls.key
+                - https://127.0.0.1:10080/status
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - NET_RAW
+
+          volumeMounts:
+            - name: tidb-config
+              mountPath: /etc/tidb
+              readOnly: true
+            - name: tidb-sql-tls
+              mountPath: /var/lib/tidb-sql-tls
+              readOnly: true
+            - name: tidb-cluster-tls
+              mountPath: /var/lib/tidb-tls
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: tidb-config
+          configMap:
+            # TODO/BLOCKER: 先导出并检查这个原 ConfigMap。若含原节点 DNS 或
+            # 节点专属参数，复制成 diagnostic-tidb 后再修改这里的 name。
+            name: xxxxxx
+        - name: tidb-sql-tls
+          secret:
+            # TODO/BLOCKER: 检查证书 SAN；必要时换成新签发的 Secret。
+            secretName: db-426e9137-privileged-tidb-server-secret
+        - name: tidb-cluster-tls
+          secret:
+            # TODO/BLOCKER: 确认该集群证书允许新增 TiDB 节点复用。
+            secretName: db-426e9137-privileged-tidb-cluster-secret
+        - name: tmp
+          emptyDir: {}
+
+---
+
+# 为 diagnostic-service 或人工测试提供稳定的 MySQL 访问地址：
+# diagnostic-tidb.tidb638547848299848052.svc:4000
+# 如果客户端直接连接 Pod/Node IP，可以删除整个 Service。
+apiVersion: v1
+kind: Service
+metadata:
+  name: diagnostic-tidb
+  namespace: tidb638547848299848052
+  labels:
+    app: diagnostic-tidb
+spec:
+  type: ClusterIP
+  selector:
+    app: diagnostic-tidb
+  ports:
+    - name: mysql-client
+      port: 4000
+      targetPort: mysql-client
+      protocol: TCP
+    - name: status
+      port: 10080
+      targetPort: status
+      protocol: TCP
+
+
+
+--- 
+
+apiVersion: v1
+data:
+  config.toml: |
+    advertise-address = 'db-638547849826574708-tidb-0hl3v1.db-cluster.tidb638547848299848052.svc.cluster.local'
+    disaggregated-tiflash = true
+    graceful-wait-before-shutdown = 180
+    host = '::'
+    initialize-sql-file = '/etc/tidb-bootstrap/bootstrap.sql'
+    keyspace-name = '10512701801123380669'
+    metering-storage-uri = 's3://nextgen-metering-staging-us-west-2-dataplane?assume-role-arn=arn%3Aaws%3Aiam%3A%3A385595570414%3Arole%2Fnextgen-metering-writer-staging&region-id=us-west-2&shared-pool-id=638547848299848052'
+    path = 'db-426e9137-pd.tidb638547848299848052.svc.cluster.local:2379'
+    store = 'tikv'
+    tikv-worker-url = 'https://db-426e9137-default-tikv-worker-peer.tidb638547848299848052.svc:19000'
+    tmp-storage-path = '/tmp/tidb_tmp'
+    tmp-storage-quota = -1
+
+    [cse]
+    columnar-store-type = 'columnar'
+
+    [instance]
+    tidb_stmt_summary_enable_persistent = true
+    tidb_stmt_summary_filename = '/var/log/auditlog/tidb-statements.log'
+
+    [log]
+    slow-query-file = '/var/log/auditlog/slowlog'
+
+    [log.file]
+    max-backups = 3
+
+    [proxy-protocol]
+    fallbackable = true
+    networks = '*'
+
+    [security]
+    auth-token-jwks = '/var/lib/tidb-auth-token/tidb_auth_token_jwks.json'
+    cluster-ssl-ca = '/var/lib/tidb-tls/ca.crt'
+    cluster-ssl-cert = '/var/lib/tidb-tls/tls.crt'
+    cluster-ssl-key = '/var/lib/tidb-tls/tls.key'
+    cluster-verify-cn = ['80eaa300']
+    enable-sem = false
+    sem-config = '/etc/sem/sem.json'
+    session-token-signing-cert = '/var/lib/tidb-session-token-signing-tls/tls.crt'
+    session-token-signing-key = '/var/lib/tidb-session-token-signing-tls/tls.key'
+    ssl-ca = '/var/lib/tidb-sql-tls/ca.crt'
+    ssl-cert = '/var/lib/tidb-sql-tls/tls.crt'
+    ssl-key = '/var/lib/tidb-sql-tls/tls.key'
+
+    [status]
+    record-db-label = true
+
+    [tikv-client]
+    [tikv-client.copr-cache]
+    capacity-mb = 0.0
+kind: ConfigMap
+metadata:
+  name: xxxxxx
+  namespace: tidb638547848299848052

@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: diagnostic-service
-  namespace: tidb638444168208753846
+  namespace: tidb638547848299848052
   labels:
     app: diagnostic-service
 spec:
@@ -18,7 +18,7 @@ spec:
       terminationGracePeriodSeconds: 15
       containers:
         - name: diagnostic-service
-          image: xuzhangxian/canary:v1
+          image: zhangyuanjia/canary:v1
           imagePullPolicy: Always
           args:
             - -http-addr
@@ -56,7 +56,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: diagnostic-service
-  namespace: tidb638444168208753846
+  namespace: tidb638547848299848052
   labels:
     app: diagnostic-service
 spec:
