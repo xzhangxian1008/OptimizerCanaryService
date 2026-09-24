@@ -30,7 +30,7 @@ spec:
         - name: tidb
           # TODO/BLOCKER: 替换成特殊 TiDB 的完整镜像地址和不可变 tag/digest。
           # 使用 example.invalid 是为了防止误 apply 后拉取到错误镜像。
-          image: us-docker.pkg.dev/pingcap-testing-account/dev/pingcap/tidb/images/tidb-server:pull-71394-0bcf324-nextgen
+          image: 385595570414.dkr.ecr.us-west-2.amazonaws.com/tidbcloud/tidb:pull-71394-f4d00e3-nextgen-testing
           imagePullPolicy: Always
 
           # TODO/BLOCKER: 用特殊 TiDB 的真实启动命令替换下面整个 command/args。
@@ -39,7 +39,7 @@ spec:
             - /tidb-server
             -  --config
             - /etc/tidb/config.toml
-            - --diagnostic-mode
+            - --diagnostic-mode=true
             - --standby=false
           env:
             - name: TZ
@@ -115,7 +115,7 @@ spec:
           configMap:
             # TODO/BLOCKER: 先导出并检查这个原 ConfigMap。若含原节点 DNS 或
             # 节点专属参数，复制成 diagnostic-tidb 后再修改这里的 name。
-            name: xxxxxx
+            name: diagnostic-tidb
         - name: tidb-sql-tls
           secret:
             # TODO/BLOCKER: 检查证书 SAN；必要时换成新签发的 Secret。
@@ -212,5 +212,5 @@ data:
     capacity-mb = 0.0
 kind: ConfigMap
 metadata:
-  name: xxxxxx
+  name: diagnostic-tidb
   namespace: tidb638547848299848052

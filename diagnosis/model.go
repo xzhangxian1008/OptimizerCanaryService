@@ -8,7 +8,8 @@ const (
 	SourceStatementSummary Source = "statement_summary"
 )
 
-var sources = []Source{SourceSlowQuery, SourceTopSQL, SourceStatementSummary}
+// TODO Add SourceSlowQuery in the future, as the slow_query table is not accessible in the cloud environment.
+var sources = []Source{SourceStatementSummary}
 
 type SourceResult struct {
 	Sampled   int `json:"sampled"`
