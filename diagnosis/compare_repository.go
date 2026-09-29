@@ -38,22 +38,22 @@ func (r *SQLRepository) StatementPlans(ctx context.Context) ([]StatementPlan, er
 	r.logger.Info("execute SQL", zap.String("sql", compareStatementsQuery))
 	rows, err := r.db.QueryContext(queryCtx, compareStatementsQuery)
 	if err != nil {
-		return nil, fmt.Errorf("query cluster statement plans: %w", err)
+		return nil, newStackErrorf("query cluster statement plans: %w", err)
 	}
 	defer rows.Close()
 	var statements []StatementPlan
 	for rows.Next() {
 		var statement StatementPlan
 		if err := rows.Scan(&statement.Schema, &statement.SQLDigest, &statement.SQL, &statement.ExecCount, &statement.PlanDigest, &statement.Plan); err != nil {
-			return nil, fmt.Errorf("scan cluster statement plan: %w", err)
+			return nil, newStackErrorf("scan cluster statement plan: %w", err)
 		}
 		if statement.SQLDigest == "" || statement.PlanDigest == "" || strings.TrimSpace(statement.SQL) == "" {
-			return nil, fmt.Errorf("cluster statement plan is missing SQL or digest (SQL digest %q)", statement.SQLDigest)
+			return nil, newStackErrorf("cluster statement plan is missing SQL or digest (SQL digest %q)", statement.SQLDigest)
 		}
 		statements = append(statements, statement)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("read cluster statement plans: %w", err)
+		return nil, newStackErrorf("read cluster statement plans: %w", err)
 	}
 	return statements, nil
 }
@@ -68,14 +68,14 @@ func (r *SQLRepository) ExplainPlanWithDigest(ctx context.Context, sample Sample
 	defer cancel()
 	conn, err := r.db.Conn(explainCtx)
 	if err != nil {
-		return "", "", fmt.Errorf("acquire connection: %w", err)
+		return "", "", newStackErrorf("acquire connection: %w", err)
 	}
 	defer conn.Close()
 	if sample.Schema != "" {
 		useSQL := "USE `" + strings.ReplaceAll(sample.Schema, "`", "``") + "`"
 		r.logger.Info("execute SQL", zap.String("sql", useSQL))
 		if _, err := conn.ExecContext(explainCtx, useSQL); err != nil {
-			return "", "", fmt.Errorf("select schema %q: %w", sample.Schema, err)
+			return "", "", newStackErrorf("select schema %q: %w", sample.Schema, err)
 		}
 	}
 	statement, arguments, err := explainableSample(sample.SQL)
@@ -83,13 +83,13 @@ func (r *SQLRepository) ExplainPlanWithDigest(ctx context.Context, sample Sample
 		return "", "", fmt.Errorf("parse prepared statement sample: %w", err)
 	}
 	if statement == "" {
-		return "", "", fmt.Errorf("cannot explain an empty statement")
+		return "", "", newStackErrorf("cannot explain an empty statement")
 	}
 	explainSQL := "EXPLAIN " + statement
 	r.logger.Info("execute SQL", zap.String("schema", sample.Schema), zap.String("sql", explainSQL))
 	rows, err := conn.QueryContext(explainCtx, explainSQL, arguments...)
 	if err != nil {
-		return "", "", fmt.Errorf("explain statement: %w", err)
+		return "", "", newStackErrorf("explain statement: %w", err)
 	}
 	defer rows.Close()
 	columns, values, err := readStringRows(rows)
@@ -122,7 +122,7 @@ ORDER BY summary_end_time DESC`
 func (r *SQLRepository) explainPlanDigest(ctx context.Context, conn *sql.Conn, schema, explainSQL, newPlan string) (string, error) {
 	rows, err := conn.QueryContext(ctx, explainPlanDigestQuery, schema, explainSQL)
 	if err != nil {
-		return "", fmt.Errorf("query EXPLAIN plan digest: %w", err)
+		return "", newStackErrorf("query EXPLAIN plan digest: %w", err)
 	}
 	defer rows.Close()
 	newOperators, err := planOperators(newPlan)
@@ -132,7 +132,7 @@ func (r *SQLRepository) explainPlanDigest(ctx context.Context, conn *sql.Conn, s
 	for rows.Next() {
 		var digest, plan string
 		if err := rows.Scan(&digest, &plan); err != nil {
-			return "", fmt.Errorf("scan EXPLAIN plan digest: %w", err)
+			return "", newStackErrorf("scan EXPLAIN plan digest: %w", err)
 		}
 		operators, err := planOperators(plan)
 		if err == nil && slices.Equal(newOperators, operators) {
@@ -140,9 +140,9 @@ func (r *SQLRepository) explainPlanDigest(ctx context.Context, conn *sql.Conn, s
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return "", fmt.Errorf("read EXPLAIN plan digests: %w", err)
+		return "", newStackErrorf("read EXPLAIN plan digests: %w", err)
 	}
-	return "", fmt.Errorf("no plan digest found for EXPLAIN of SQL in schema %q", schema)
+	return "", newStackErrorf("no plan digest found for EXPLAIN of SQL in schema %q", schema)
 }
 
 // explainableSample removes the annotation TiDB appends to a server-side
@@ -166,7 +166,7 @@ func explainableSample(sample string) (string, []any, error) {
 	argumentText := strings.TrimSpace(sample[markerIndex+len(marker):])
 	argumentText = strings.TrimSpace(strings.TrimSuffix(argumentText, ";"))
 	if !strings.HasSuffix(argumentText, "]") {
-		return "", nil, fmt.Errorf("arguments annotation is not closed")
+		return "", nil, newStackErrorf("arguments annotation is not closed")
 	}
 	argumentText = strings.TrimSpace(strings.TrimSuffix(argumentText, "]"))
 	arguments, err := parseTiDBArguments(argumentText)
@@ -214,7 +214,7 @@ func parseTiDBArguments(text string) ([]any, error) {
 			depth++
 		case ')':
 			if depth == 0 {
-				return nil, fmt.Errorf("unexpected ')' in arguments")
+				return nil, newStackErrorf("unexpected ')' in arguments")
 			}
 			depth--
 		case ',':
@@ -225,10 +225,10 @@ func parseTiDBArguments(text string) ([]any, error) {
 		}
 	}
 	if quote != 0 {
-		return nil, fmt.Errorf("unterminated quoted argument")
+		return nil, newStackErrorf("unterminated quoted argument")
 	}
 	if depth != 0 {
-		return nil, fmt.Errorf("unclosed parenthesized argument")
+		return nil, newStackErrorf("unclosed parenthesized argument")
 	}
 	parts = append(parts, strings.TrimSpace(text[start:]))
 
@@ -246,7 +246,7 @@ func parseTiDBArguments(text string) ([]any, error) {
 func parseTiDBArgument(text string) (any, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
-		return nil, fmt.Errorf("empty argument")
+		return nil, newStackErrorf("empty argument")
 	}
 	if strings.EqualFold(text, "NULL") {
 		return nil, nil
@@ -255,7 +255,7 @@ func parseTiDBArgument(text string) (any, error) {
 		if text[0] == '"' {
 			value, err := strconv.Unquote(text)
 			if err != nil {
-				return nil, fmt.Errorf("decode string argument %q: %w", text, err)
+				return nil, newStackErrorf("decode string argument %q: %w", text, err)
 			}
 			return value, nil
 		}
@@ -285,7 +285,7 @@ func (r *SQLRepository) Bindings(ctx context.Context, digest, schema string) (st
 	r.logger.Info("execute SQL", zap.String("sql", compareBindingsQuery), zap.String("digest", digest), zap.String("schema", schema))
 	rows, err := r.db.QueryContext(queryCtx, compareBindingsQuery, digest, schema)
 	if err != nil {
-		return "", fmt.Errorf("query bindings: %w", err)
+		return "", newStackErrorf("query bindings: %w", err)
 	}
 	defer rows.Close()
 	columns, values, err := readStringRows(rows)
@@ -307,7 +307,7 @@ func (r *SQLRepository) Bindings(ctx context.Context, digest, schema string) (st
 func readStringRows(rows *sql.Rows) ([]string, [][]string, error) {
 	columns, err := rows.Columns()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, newStackErrorf("read result columns: %w", err)
 	}
 	var result [][]string
 	for rows.Next() {
@@ -317,7 +317,7 @@ func readStringRows(rows *sql.Rows) ([]string, [][]string, error) {
 			destinations[i] = &values[i]
 		}
 		if err := rows.Scan(destinations...); err != nil {
-			return nil, nil, err
+			return nil, nil, newStackErrorf("scan result row: %w", err)
 		}
 		row := make([]string, len(columns))
 		for i := range values {
@@ -325,7 +325,10 @@ func readStringRows(rows *sql.Rows) ([]string, [][]string, error) {
 		}
 		result = append(result, row)
 	}
-	return columns, result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, nil, newStackErrorf("read result rows: %w", err)
+	}
+	return columns, result, nil
 }
 
 func (m *ConnectionManager) Compare(ctx context.Context) (string, error) {

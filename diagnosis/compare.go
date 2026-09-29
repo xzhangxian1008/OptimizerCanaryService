@@ -69,17 +69,17 @@ func planOperators(plan string) ([]planOperator, error) {
 				}
 			}
 			if idColumn < 0 || taskColumn < 0 {
-				return nil, fmt.Errorf("plan header must contain id and task columns")
+				return nil, newStackErrorf("plan header must contain id and task columns")
 			}
 			continue
 		}
 		if len(fields) <= max(idColumn, taskColumn) || fields[idColumn] == "" || fields[taskColumn] == "" {
-			return nil, fmt.Errorf("plan row is missing id or task: %q", line)
+			return nil, newStackErrorf("plan row is missing id or task: %q", line)
 		}
 		operators = append(operators, planOperator{id: fields[idColumn], task: fields[taskColumn]})
 	}
 	if len(operators) == 0 {
-		return nil, fmt.Errorf("plan has no operators")
+		return nil, newStackErrorf("plan has no operators")
 	}
 	return operators, nil
 }
