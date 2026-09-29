@@ -112,15 +112,16 @@ func (r *SQLRepository) ExplainPlanWithDigest(ctx context.Context, sample Sample
 
 const explainPlanDigestQuery = `SELECT COALESCE(plan_digest, ''), COALESCE(plan, '')
 FROM information_schema.cluster_statements_summary
-WHERE LOWER(stmt_type) = 'explainsql'
-  AND COALESCE(schema_name, '') = ?
+WHERE LOWER(stmt_type) IN ('explainsql', 'explain')
+  AND (? = '' OR COALESCE(schema_name, '') = ?)
   AND LOCATE(?, query_sample_text) = 1
   AND plan_digest IS NOT NULL AND plan_digest <> ''
   AND plan IS NOT NULL AND plan <> ''
 ORDER BY summary_end_time DESC`
 
 func (r *SQLRepository) explainPlanDigest(ctx context.Context, conn *sql.Conn, schema, explainSQL, newPlan string) (string, error) {
-	rows, err := conn.QueryContext(ctx, explainPlanDigestQuery, schema, explainSQL)
+
+	rows, err := conn.QueryContext(ctx, explainPlanDigestQuery, schema, schema, explainSQL)
 	if err != nil {
 		return "", newStackErrorf("query EXPLAIN plan digest: %w", err)
 	}
@@ -129,13 +130,14 @@ func (r *SQLRepository) explainPlanDigest(ctx context.Context, conn *sql.Conn, s
 	if err != nil {
 		return "", fmt.Errorf("read EXPLAIN plan for digest lookup: %w", err)
 	}
+	newDigestOperators := digestLookupOperators(newOperators)
 	for rows.Next() {
 		var digest, plan string
 		if err := rows.Scan(&digest, &plan); err != nil {
 			return "", newStackErrorf("scan EXPLAIN plan digest: %w", err)
 		}
 		operators, err := planOperators(plan)
-		if err == nil && slices.Equal(newOperators, operators) {
+		if err == nil && slices.Equal(newDigestOperators, digestLookupOperators(operators)) {
 			return digest, nil
 		}
 	}
@@ -143,6 +145,21 @@ func (r *SQLRepository) explainPlanDigest(ctx context.Context, conn *sql.Conn, s
 		return "", newStackErrorf("read EXPLAIN plan digests: %w", err)
 	}
 	return "", newStackErrorf("no plan digest found for EXPLAIN of SQL in schema %q", schema)
+}
+
+// digestLookupOperators accounts for the task name difference between direct
+// EXPLAIN output (mpp[...]) and the plan text stored in statement summary
+// (cop[...]). This normalization is only used to locate the new plan digest;
+// old/new plan comparison still uses the original id/task values.
+func digestLookupOperators(operators []planOperator) []planOperator {
+	normalized := make([]planOperator, len(operators))
+	copy(normalized, operators)
+	for i := range normalized {
+		if strings.HasPrefix(normalized[i].task, "mpp[") {
+			normalized[i].task = "cop" + normalized[i].task[len("mpp"):]
+		}
+	}
+	return normalized
 }
 
 // explainableSample removes the annotation TiDB appends to a server-side
