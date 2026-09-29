@@ -43,12 +43,25 @@ After a TiDB connection has been configured, this endpoint reads all `SELECT`
 rows from `information_schema.cluster_statements_summary`, runs `EXPLAIN` for
 each distinct SQL statement, and returns `compare.md` as a Markdown download.
 The report contains one row for every recorded plan whose `id` and `task`
-columns differ from the new `EXPLAIN` result. Plans recorded by multiple TiDB
+columns differ from the new `EXPLAIN` result, ignoring numeric operator ID\nsuffixes such as _12 while still comparing task values. Plans recorded by multiple TiDB
 instances are combined and their execution counts are added. The long plan and
 binding values in the table are links to their full text below the table. The
 SQL digest, current plan digest, and new plan digest are shortened to eight
 characters; the SQL digest links to the full SQL heading. Rows are sorted by
-execution count in descending order.
+total execution time (ExecTime) in descending order.
+
+The columns are SQL Digest, ExecCount, ExecTime, Current Plan, New Plan,
+Plan Change (currently blank), and Binding of the Current Plan. ExecTime sums
+SUM_LATENCY for each schema/SQL digest/plan digest group and displays seconds
+with nanosecond precision. Binding details contain the SQL with PLAN_HINT
+inserted as an optimizer hint after the main query's first SELECT, outside CTE
+definitions and before subsequent UNION branches. An existing hint immediately
+after that SELECT is replaced. Empty PLAN_HINT values are shown as unavailable.
+This report does not create bindings in TiDB.
+
+SQL details use level-two headings; current plan, new plan, and binding details
+use level-three headings grouped under their SQL. Current plan headings and
+anchors end in _current_plan.
 
 ```bash
 curl -sS -OJ http://127.0.0.1:8080/compare

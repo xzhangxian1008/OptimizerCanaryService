@@ -14,13 +14,14 @@ type StatementPlan struct {
 	SQLDigest  string
 	PlanDigest string
 	ExecCount  uint64
+	ExecTime   uint64 // SUM_LATENCY, in nanoseconds.
+	PlanHint   string
 	Plan       string
 }
 
 type CompareRepository interface {
 	StatementPlans(context.Context) ([]StatementPlan, error)
 	ExplainPlan(context.Context, Sample) (string, error)
-	Bindings(context.Context, string, string) (string, error)
 }
 
 type planDigestRepository interface {
@@ -42,7 +43,7 @@ type planOperator struct {
 
 // planOperators reads TiDB's tab-separated PLAN/EXPLAIN output. The summary's
 // PLAN places task before estRows, whereas EXPLAIN places it after estRows.
-// Padding is insignificant; operator IDs, tree branches and row order are not.
+// Ignore numeric operator ID suffixes; preserve task, branches and row order.
 func planOperators(plan string) ([]planOperator, error) {
 	var operators []planOperator
 	idColumn, taskColumn := -1, -1
@@ -76,12 +77,26 @@ func planOperators(plan string) ([]planOperator, error) {
 		if len(fields) <= max(idColumn, taskColumn) || fields[idColumn] == "" || fields[taskColumn] == "" {
 			return nil, newStackErrorf("plan row is missing id or task: %q", line)
 		}
-		operators = append(operators, planOperator{id: fields[idColumn], task: fields[taskColumn]})
+		operators = append(operators, planOperator{id: operatorName(fields[idColumn]), task: fields[taskColumn]})
 	}
 	if len(operators) == 0 {
 		return nil, newStackErrorf("plan has no operators")
 	}
 	return operators, nil
+}
+
+// operatorName removes only a trailing underscore followed entirely by digits.
+func operatorName(id string) string {
+	i := strings.LastIndexByte(id, '_')
+	if i < 0 || i == len(id)-1 {
+		return id
+	}
+	for _, c := range id[i+1:] {
+		if c < '0' || c > '9' {
+			return id
+		}
+	}
+	return id[:i]
 }
 
 type comparedPlan struct {
@@ -100,8 +115,6 @@ func (c *Comparer) Compare(ctx context.Context) (string, error) {
 	statements = aggregateStatementPlans(statements)
 	type explanation struct{ plan, digest string }
 	explained := make(map[Sample]explanation)
-	type bindingKey struct{ digest, schema string }
-	bindings := make(map[bindingKey]string)
 	var changed []comparedPlan
 	for _, statement := range statements {
 		if err := ctx.Err(); err != nil {
@@ -133,24 +146,19 @@ func (c *Comparer) Compare(ctx context.Context) (string, error) {
 		if slices.Equal(oldOperators, newOperators) {
 			continue
 		}
-		key := bindingKey{statement.SQLDigest, statement.Schema}
-		binding, ok := bindings[key]
-		if !ok {
-			binding, err = c.repository.Bindings(ctx, statement.SQLDigest, statement.Schema)
-			if err != nil {
-				return "", fmt.Errorf("SQL digest %s: %w", statement.SQLDigest, err)
-			}
-			bindings[key] = binding
+		binding, err := currentPlanBinding(statement.SQL, statement.PlanHint)
+		if err != nil {
+			return "", fmt.Errorf("SQL digest %s: build current plan binding: %w", statement.SQLDigest, err)
 		}
 		changed = append(changed, comparedPlan{
 			statement: statement, newPlan: newPlan.plan, newPlanDigest: newPlan.digest, bindings: binding,
 		})
 	}
 	slices.SortFunc(changed, func(a, b comparedPlan) int {
-		if a.statement.ExecCount > b.statement.ExecCount {
+		if a.statement.ExecTime > b.statement.ExecTime {
 			return -1
 		}
-		if a.statement.ExecCount < b.statement.ExecCount {
+		if a.statement.ExecTime < b.statement.ExecTime {
 			return 1
 		}
 		if order := strings.Compare(a.statement.SQLDigest, b.statement.SQLDigest); order != 0 {
@@ -169,6 +177,7 @@ func aggregateStatementPlans(statements []StatementPlan) []StatementPlan {
 		k := key{statement.Schema, statement.SQLDigest, statement.PlanDigest}
 		if i, ok := indices[k]; ok {
 			result[i].ExecCount += statement.ExecCount
+			result[i].ExecTime += statement.ExecTime
 		} else {
 			indices[k] = len(result)
 			result = append(result, statement)
@@ -187,10 +196,10 @@ func aggregateStatementPlans(statements []StatementPlan) []StatementPlan {
 }
 
 func renderComparison(plans []comparedPlan) string {
-	var report, details strings.Builder
+	var report strings.Builder
 	report.WriteString("# SQL Plan Comparison\n\n")
-	report.WriteString("| SQL Digest | ExecCount | Current Plan | New Plan | Binding |\n")
-	report.WriteString("| --- | ---: | --- | --- | --- |\n")
+	report.WriteString("| SQL Digest | ExecCount | ExecTime | Current Plan | New Plan | Plan Change | Binding of the Current Plan |\n")
+	report.WriteString("| --- | ---: | ---: | --- | --- | --- | --- |\n")
 	anchors := make(map[string]int)
 	type sqlDetailKey struct {
 		digest string
@@ -198,42 +207,49 @@ func renderComparison(plans []comparedPlan) string {
 		sql    string
 	}
 	sqlAnchors := make(map[sqlDetailKey]string)
+	detailGroups := make(map[sqlDetailKey]*strings.Builder)
+	var detailOrder []sqlDetailKey
 	for _, plan := range plans {
 		statement := plan.statement
 		sqlDigestPrefix := firstEight(statement.SQLDigest)
 		sqlKey := sqlDetailKey{digest: statement.SQLDigest, schema: statement.Schema, sql: statement.SQL}
 		sqlAnchor, known := sqlAnchors[sqlKey]
+		details := detailGroups[sqlKey]
 		if !known {
+			details = &strings.Builder{}
+			detailGroups[sqlKey] = details
+			detailOrder = append(detailOrder, sqlKey)
 			title := sqlDigestPrefix + "_sql"
 			sqlAnchor = uniqueHeadingAnchor(title, anchors)
 			sqlAnchors[sqlKey] = sqlAnchor
-			title = sqlDigestPrefix + strings.Join(strings.Fields(statement.SQL), " ")
-			fmt.Fprintf(&details, "\n<a id=\"%s\"></a>\n\n## %s\n\n", html.EscapeString(sqlAnchor), title)
-			fmt.Fprintf(&details, "Schema: %s  \nSQL Digest: %s\n\n",
+			fmt.Fprintf(details, "\n<a id=\"%s\"></a>\n\n## %s\n\n", html.EscapeString(sqlAnchor), title)
+			fmt.Fprintf(details, "Schema: %s  \nSQL Digest: %s\n\n",
 				markdownCell(statement.Schema), markdownCell(statement.SQLDigest))
-			writeCodeBlock(&details, statement.SQL)
+			writeCodeBlock(details, statement.SQL)
 		}
 
-		oldTitle := sqlDigestPrefix + "_" + firstEight(statement.PlanDigest) + "_old_plan"
+		currentTitle := sqlDigestPrefix + "_" + firstEight(statement.PlanDigest) + "_current_plan"
 		newTitle := sqlDigestPrefix + "_" + firstEight(plan.newPlanDigest) + "_new_plan"
 		bindingTitle := sqlDigestPrefix + "_" + firstEight(statement.PlanDigest) + "_binding_info"
-		oldAnchor := writeDetail(&details, oldTitle, statement, statement.PlanDigest, statement.Plan, anchors)
-		newAnchor := writeDetail(&details, newTitle, statement, plan.newPlanDigest, plan.newPlan, anchors)
+		currentAnchor := writeDetail(details, currentTitle, statement, statement.PlanDigest, withoutPlanColumns(statement.Plan, "actRows", "execution info", "memory", "disk"), anchors)
+		newAnchor := writeDetail(details, newTitle, statement, plan.newPlanDigest, plan.newPlan, anchors)
 		bindingText := plan.bindings
 		if bindingText == "" {
-			bindingText = "No global bindings found."
+			bindingText = "No PLAN_HINT available."
 		}
-		bindingAnchor := writeDetail(&details, bindingTitle, statement, statement.PlanDigest, bindingText, anchors)
-		fmt.Fprintf(&report, "| [%s](#%s) | %d | [%s](#%s) | [%s](#%s) | [%s](#%s) |\n",
-			markdownCell(sqlDigestPrefix), sqlAnchor, statement.ExecCount,
-			markdownCell(firstEight(statement.PlanDigest)), oldAnchor,
+		bindingAnchor := writeDetail(details, bindingTitle, statement, statement.PlanDigest, bindingText, anchors)
+		fmt.Fprintf(&report, "| [%s](#%s) | %d | %s | [%s](#%s) | [%s](#%s) | N/A | [%s](#%s) |\n",
+			markdownCell(sqlDigestPrefix), sqlAnchor, statement.ExecCount, formatExecTime(statement.ExecTime),
+			markdownCell(firstEight(statement.PlanDigest)), currentAnchor,
 			markdownCell(firstEight(plan.newPlanDigest)), newAnchor,
-			markdownCell(preview(bindingText)), bindingAnchor)
+			markdownCell("bind info"), bindingAnchor)
 	}
 	if len(plans) == 0 {
 		report.WriteString("\nNo plan differences found.\n")
 	}
-	report.WriteString(details.String())
+	for _, key := range detailOrder {
+		report.WriteString(detailGroups[key].String())
+	}
 	return report.String()
 }
 
@@ -248,11 +264,58 @@ func uniqueHeadingAnchor(title string, anchors map[string]int) string {
 
 func writeDetail(details *strings.Builder, title string, statement StatementPlan, planDigest, content string, anchors map[string]int) string {
 	anchor := uniqueHeadingAnchor(title, anchors)
-	fmt.Fprintf(details, "\n<a id=\"%s\"></a>\n\n## %s\n\n", html.EscapeString(anchor), title)
+	fmt.Fprintf(details, "\n<a id=\"%s\"></a>\n\n### %s\n\n", html.EscapeString(anchor), title)
 	fmt.Fprintf(details, "Schema: %s  \nSQL Digest: %s  \nPlan Digest: %s\n\n",
 		markdownCell(statement.Schema), markdownCell(statement.SQLDigest), markdownCell(planDigest))
 	writeCodeBlock(details, content)
 	return anchor
+}
+
+func withoutPlanColumns(plan string, columnNames ...string) string {
+	remove := make(map[int]struct{})
+	lines := strings.Split(plan, "\n")
+	headerLine := -1
+	var header []string
+	for i, line := range lines {
+		fields := strings.Split(line, "\t")
+		for _, field := range fields {
+			if strings.EqualFold(strings.TrimSpace(field), "id") {
+				headerLine = i
+				header = fields
+				break
+			}
+		}
+		if headerLine >= 0 {
+			break
+		}
+	}
+	if headerLine < 0 {
+		return plan
+	}
+	for i, field := range header {
+		for _, columnName := range columnNames {
+			if strings.EqualFold(strings.TrimSpace(field), columnName) {
+				remove[i] = struct{}{}
+			}
+		}
+	}
+	if len(remove) == 0 {
+		return plan
+	}
+	for i, line := range lines {
+		fields := strings.Split(line, "\t")
+		if len(fields) != len(header) {
+			continue
+		}
+		kept := make([]string, 0, len(fields)-len(remove))
+		for j, field := range fields {
+			if _, ok := remove[j]; !ok {
+				kept = append(kept, field)
+			}
+		}
+		lines[i] = strings.Join(kept, "\t")
+	}
+	return strings.Join(lines, "\n")
 }
 
 func firstEight(value string) string {

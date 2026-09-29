@@ -14,7 +14,8 @@ import (
 )
 
 const compareStatementsQuery = `SELECT COALESCE(schema_name, ''), digest,
-       query_sample_text, exec_count, COALESCE(plan_digest, ''), COALESCE(plan, '')
+       query_sample_text, exec_count, COALESCE(plan_digest, ''), COALESCE(plan, ''),
+       COALESCE(sum_latency, 0), COALESCE(plan_hint, '')
 FROM information_schema.cluster_statements_summary
 WHERE LOWER(stmt_type) = 'select'
   AND query_sample_text IS NOT NULL AND query_sample_text <> ''
@@ -44,7 +45,7 @@ func (r *SQLRepository) StatementPlans(ctx context.Context) ([]StatementPlan, er
 	var statements []StatementPlan
 	for rows.Next() {
 		var statement StatementPlan
-		if err := rows.Scan(&statement.Schema, &statement.SQLDigest, &statement.SQL, &statement.ExecCount, &statement.PlanDigest, &statement.Plan); err != nil {
+		if err := rows.Scan(&statement.Schema, &statement.SQLDigest, &statement.SQL, &statement.ExecCount, &statement.PlanDigest, &statement.Plan, &statement.ExecTime, &statement.PlanHint); err != nil {
 			return nil, newStackErrorf("scan cluster statement plan: %w", err)
 		}
 		if statement.SQLDigest == "" || statement.PlanDigest == "" || strings.TrimSpace(statement.SQL) == "" {
@@ -110,18 +111,17 @@ func (r *SQLRepository) ExplainPlanWithDigest(ctx context.Context, sample Sample
 	return planText, planDigest, nil
 }
 
-const explainPlanDigestQuery = `SELECT COALESCE(plan_digest, ''), COALESCE(plan, '')
+const explainPlanDigestQuery = `SELECT COALESCE(query_sample_text, ''), COALESCE(plan_digest, ''), COALESCE(plan, '')
 FROM information_schema.cluster_statements_summary
 WHERE LOWER(stmt_type) IN ('explainsql', 'explain')
   AND (? = '' OR COALESCE(schema_name, '') = ?)
-  AND LOCATE(?, query_sample_text) = 1
   AND plan_digest IS NOT NULL AND plan_digest <> ''
   AND plan IS NOT NULL AND plan <> ''
 ORDER BY summary_end_time DESC`
 
 func (r *SQLRepository) explainPlanDigest(ctx context.Context, conn *sql.Conn, schema, explainSQL, newPlan string) (string, error) {
 
-	rows, err := conn.QueryContext(ctx, explainPlanDigestQuery, schema, schema, explainSQL)
+	rows, err := conn.QueryContext(ctx, explainPlanDigestQuery, schema, schema)
 	if err != nil {
 		return "", newStackErrorf("query EXPLAIN plan digest: %w", err)
 	}
@@ -131,10 +131,14 @@ func (r *SQLRepository) explainPlanDigest(ctx context.Context, conn *sql.Conn, s
 		return "", fmt.Errorf("read EXPLAIN plan for digest lookup: %w", err)
 	}
 	newDigestOperators := digestLookupOperators(newOperators)
+	normalizedExplainSQL := normalizeExplainSQL(explainSQL)
 	for rows.Next() {
-		var digest, plan string
-		if err := rows.Scan(&digest, &plan); err != nil {
+		var querySample, digest, plan string
+		if err := rows.Scan(&querySample, &digest, &plan); err != nil {
 			return "", newStackErrorf("scan EXPLAIN plan digest: %w", err)
+		}
+		if normalizeExplainSQL(querySample) != normalizedExplainSQL {
+			continue
 		}
 		operators, err := planOperators(plan)
 		if err == nil && slices.Equal(newDigestOperators, digestLookupOperators(operators)) {
@@ -145,6 +149,81 @@ func (r *SQLRepository) explainPlanDigest(ctx context.Context, conn *sql.Conn, s
 		return "", newStackErrorf("read EXPLAIN plan digests: %w", err)
 	}
 	return "", newStackErrorf("no plan digest found for EXPLAIN of SQL in schema %q", schema)
+}
+
+func normalizeExplainSQL(sqlText string) string {
+	var normalized strings.Builder
+	spacePending := false
+	for i := 0; i < len(sqlText); {
+		char := sqlText[i]
+		if char == '\'' || (char == '"' && isDoubleQuotedStringStart(sqlText, i)) {
+			if spacePending && normalized.Len() > 0 {
+				normalized.WriteByte(' ')
+				spacePending = false
+			}
+			end := quotedSQLTokenEnd(sqlText, i, char)
+			if char == '"' {
+				normalized.WriteByte('\'')
+				normalized.WriteString(sqlText[i+1 : end-1])
+				normalized.WriteByte('\'')
+			} else {
+				normalized.WriteString(sqlText[i:end])
+			}
+			i = end
+			continue
+		}
+		if char == '"' {
+			if spacePending && normalized.Len() > 0 {
+				normalized.WriteByte(' ')
+				spacePending = false
+			}
+			end := quotedSQLTokenEnd(sqlText, i, char)
+			normalized.WriteString(sqlText[i:end])
+			i = end
+			continue
+		}
+		if unicode.IsSpace(rune(char)) {
+			spacePending = true
+			i++
+			continue
+		}
+		if spacePending && normalized.Len() > 0 {
+			normalized.WriteByte(' ')
+		}
+		spacePending = false
+		normalized.WriteRune(unicode.ToLower(rune(char)))
+		i++
+	}
+	return normalized.String()
+}
+
+func quotedSQLTokenEnd(sqlText string, start int, quote byte) int {
+	for i := start + 1; i < len(sqlText); i++ {
+		if sqlText[i] != quote {
+			continue
+		}
+		if i+1 < len(sqlText) && sqlText[i+1] == quote {
+			i++
+			continue
+		}
+		return i + 1
+	}
+	return len(sqlText)
+}
+
+func isDoubleQuotedStringStart(sqlText string, index int) bool {
+	for index > 0 && sqlText[index-1] == ' ' {
+		index--
+	}
+	if index == 0 {
+		return true
+	}
+	switch sqlText[index-1] {
+	case '=', '<', '>', '!', '(', ',', '+', '-', '*', '/', '%':
+		return true
+	default:
+		return false
+	}
 }
 
 // digestLookupOperators accounts for the task name difference between direct
