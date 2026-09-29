@@ -16,13 +16,13 @@ const (
 	queryTimeout   = 15 * time.Second
 	explainTimeout = 15 * time.Second
 
-	slowQueryQuery = `SELECT COALESCE(db, ''), query
-FROM information_schema.slow_query
-WHERE is_internal = FALSE AND query IS NOT NULL AND query <> ''
-  AND LOWER(query) NOT LIKE '%information_schema.slow_query%'
-  AND LOWER(query) NOT LIKE '%information_schema.statements_summary%'
-ORDER BY RAND()
-LIMIT __LIMIT__`
+// 	slowQueryQuery = `SELECT COALESCE(db, ''), query
+// FROM information_schema.slow_query
+// WHERE is_internal = FALSE AND query IS NOT NULL AND query <> ''
+//   AND LOWER(query) NOT LIKE '%information_schema.slow_query%'
+//   AND LOWER(query) NOT LIKE '%information_schema.statements_summary%'
+// ORDER BY RAND()
+// LIMIT __LIMIT__`
 
 	statementSummaryQuery = `SELECT COALESCE(schema_name, ''), query_sample_text
 FROM information_schema.cluster_statements_summary
@@ -32,10 +32,20 @@ WHERE query_sample_text IS NOT NULL AND query_sample_text <> ''
   AND LOWER(query_sample_text) NOT LIKE '%information_schema.statements_summary%'
 ORDER BY RAND()
 LIMIT __LIMIT__`
+
+// 	topSQLQuery = `SELECT COALESCE(schema_name, ''), query_sample_text
+// FROM information_schema.cluster_statements_summary
+// WHERE query_sample_text IS NOT NULL AND query_sample_text <> ''
+//   AND LOWER(stmt_type) IN ('select', 'insert', 'update', 'delete', 'replace')
+//   AND LOWER(query_sample_text) NOT LIKE '%information_schema.slow_query%'
+//   AND LOWER(query_sample_text) NOT LIKE '%information_schema.statements_summary%'
+// ORDER BY sum_latency DESC
+// LIMIT __LIMIT__`
 )
 
 var sourceQueries = map[Source]string{
 	// SourceSlowQuery:        slowQueryQuery,
+	// SourceTopSQL:           topSQLQuery,
 	SourceStatementSummary: statementSummaryQuery,
 }
 

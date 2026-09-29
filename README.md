@@ -37,6 +37,23 @@ completed up to that point.
 Returns HTTP 200 while the HTTP process is running. It does not report whether
 a TiDB connection has been configured.
 
+### `GET /compare`
+
+After a TiDB connection has been configured, this endpoint reads all `SELECT`
+rows from `information_schema.cluster_statements_summary`, runs `EXPLAIN` for
+each distinct SQL statement, and returns `compare.md` as a Markdown download.
+The report contains one row for every recorded plan whose `id` and `task`
+columns differ from the new `EXPLAIN` result. Plans recorded by multiple TiDB
+instances are combined and their execution counts are added. The long plan and
+binding values in the table are links to their full text below the table. The
+SQL digest, current plan digest, and new plan digest are shortened to eight
+characters; the SQL digest links to the full SQL heading. Rows are sorted by
+execution count in descending order.
+
+```bash
+curl -sS -OJ http://127.0.0.1:8080/compare
+```
+
 ### `POST /test/connect` (temporary test endpoint)
 
 This endpoint is currently used to configure the active TiDB connection after
