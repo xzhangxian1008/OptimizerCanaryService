@@ -561,11 +561,6 @@ func uniqueHeadingAnchor(title string, anchors map[string]int) string {
 	return anchor
 }
 
-func writeDetail(details *strings.Builder, title string, statement SQLInfo, planDigest, content string, anchors map[string]int) string {
-	anchor := uniqueHeadingAnchor(title, anchors)
-	return writeDetailWithAnchor(details, anchor, title, statement, planDigest, content)
-}
-
 func writeDetailWithAnchor(details *strings.Builder, anchor, title string, statement SQLInfo, planDigest, content string) string {
 	fmt.Fprintf(details, "\n<a id=\"%s\"></a>\n\n### %s\n\n", html.EscapeString(anchor), title)
 	fmt.Fprintf(details, "Schema: %s  \nSQL Digest: %s  \nPlan Digest: %s\n\n",
@@ -623,14 +618,6 @@ func withoutPlanColumns(plan string, columnNames ...string) string {
 
 func firstEight(value string) string {
 	return value[:min(8, len(value))]
-}
-
-func preview(value string) string {
-	runes := []rune(strings.Join(strings.Fields(value), " "))
-	if len(runes) > 16 {
-		return string(runes[:15]) + "…"
-	}
-	return string(runes)
 }
 
 func markdownCell(value string) string {
