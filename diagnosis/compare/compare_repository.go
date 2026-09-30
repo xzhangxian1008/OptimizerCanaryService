@@ -1,18 +1,14 @@
 package compare
 
 import (
-	"context"
 	"database/sql"
 	"encoding/hex"
-	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
 	"unicode"
 
 	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis/util"
-	"go.uber.org/zap"
 )
 
 const (
@@ -20,7 +16,7 @@ const (
 	explainTimeout = 15 * time.Second
 )
 
-const compareStatementsQuery = `SELECT COALESCE(schema_name, ''), digest,
+const compareSqlInfoQuery = `SELECT COALESCE(schema_name, ''), digest,
        query_sample_text, exec_count, COALESCE(plan_digest, ''), COALESCE(plan, ''),
        COALESCE(sum_latency, 0), COALESCE(plan_hint, '')
 FROM information_schema.cluster_statements_summary
@@ -42,84 +38,6 @@ WHERE sql_digest = ? AND status <> 'deleted'
   AND (default_db = ? OR default_db = '')
 ORDER BY update_time, bind_sql`
 
-func (r *SQLRepository) StatementPlans(ctx context.Context) ([]StatementPlan, error) {
-	queryCtx, cancel := context.WithTimeout(ctx, queryTimeout)
-	defer cancel()
-	r.logger.Info("execute SQL", zap.String("sql", compareStatementsQuery))
-	rows, err := r.db.QueryContext(queryCtx, compareStatementsQuery)
-	if err != nil {
-		return nil, util.NewStackErrorf("query cluster statement plans: %w", err)
-	}
-	defer rows.Close()
-	var statements []StatementPlan
-	for rows.Next() {
-		var statement StatementPlan
-		if err := rows.Scan(&statement.Schema, &statement.SQLDigest, &statement.SQL, &statement.ExecCount, &statement.PlanDigest, &statement.Plan, &statement.ExecTime, &statement.PlanHint); err != nil {
-			return nil, util.NewStackErrorf("scan cluster statement plan: %w", err)
-		}
-		if statement.SQLDigest == "" || statement.PlanDigest == "" || strings.TrimSpace(statement.SQL) == "" {
-			return nil, util.NewStackErrorf("cluster statement plan is missing SQL or digest (SQL digest %q)", statement.SQLDigest)
-		}
-		statements = append(statements, statement)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, util.NewStackErrorf("read cluster statement plans: %w", err)
-	}
-	return statements, nil
-}
-
-func (r *SQLRepository) ExplainPlan(ctx context.Context, sample Sample) (string, error) {
-	plan, _, err := r.ExplainPlanWithDigest(ctx, sample)
-	return plan, err
-}
-
-func (r *SQLRepository) ExplainPlanWithDigest(ctx context.Context, sample Sample) (string, string, error) {
-	explainCtx, cancel := context.WithTimeout(ctx, explainTimeout)
-	defer cancel()
-	conn, err := r.db.Conn(explainCtx)
-	if err != nil {
-		return "", "", util.NewStackErrorf("acquire connection: %w", err)
-	}
-	defer conn.Close()
-	if sample.Schema != "" {
-		useSQL := "USE `" + strings.ReplaceAll(sample.Schema, "`", "``") + "`"
-		r.logger.Info("execute SQL", zap.String("sql", useSQL))
-		if _, err := conn.ExecContext(explainCtx, useSQL); err != nil {
-			return "", "", util.NewStackErrorf("select schema %q: %w", sample.Schema, err)
-		}
-	}
-	statement, arguments, err := explainableSample(sample.SQL)
-	if err != nil {
-		return "", "", fmt.Errorf("parse prepared statement sample: %w", err)
-	}
-	if statement == "" {
-		return "", "", util.NewStackErrorf("cannot explain an empty statement")
-	}
-	explainSQL := "EXPLAIN " + statement
-	r.logger.Info("execute SQL", zap.String("schema", sample.Schema), zap.String("sql", explainSQL))
-	rows, err := conn.QueryContext(explainCtx, explainSQL, arguments...)
-	if err != nil {
-		return "", "", util.NewStackErrorf("explain statement: %w", err)
-	}
-	defer rows.Close()
-	columns, values, err := readStringRows(rows)
-	if err != nil {
-		return "", "", fmt.Errorf("read EXPLAIN result: %w", err)
-	}
-	var plan strings.Builder
-	plan.WriteString(strings.Join(columns, "\t"))
-	for _, row := range values {
-		plan.WriteByte('\n')
-		plan.WriteString(strings.Join(row, "\t"))
-	}
-	planText := plan.String()
-	planDigest, err := r.explainPlanDigest(explainCtx, conn, sample.Schema, explainSQL, planText)
-	if err != nil {
-		return "", "", err
-	}
-	return planText, planDigest, nil
-}
-
 const explainPlanDigestQuery = `SELECT COALESCE(query_sample_text, ''), COALESCE(plan_digest, ''), COALESCE(plan, '')
 FROM information_schema.cluster_statements_summary
 WHERE LOWER(stmt_type) IN ('explainsql', 'explain')
@@ -127,38 +45,6 @@ WHERE LOWER(stmt_type) IN ('explainsql', 'explain')
   AND plan_digest IS NOT NULL AND plan_digest <> ''
   AND plan IS NOT NULL AND plan <> ''
 ORDER BY summary_end_time DESC`
-
-func (r *SQLRepository) explainPlanDigest(ctx context.Context, conn *sql.Conn, schema, explainSQL, newPlan string) (string, error) {
-
-	rows, err := conn.QueryContext(ctx, explainPlanDigestQuery, schema, schema)
-	if err != nil {
-		return "", util.NewStackErrorf("query EXPLAIN plan digest: %w", err)
-	}
-	defer rows.Close()
-	newOperators, err := planOperators(newPlan)
-	if err != nil {
-		return "", fmt.Errorf("read EXPLAIN plan for digest lookup: %w", err)
-	}
-	newDigestOperators := digestLookupOperators(newOperators)
-	normalizedExplainSQL := normalizeExplainSQL(explainSQL)
-	for rows.Next() {
-		var querySample, digest, plan string
-		if err := rows.Scan(&querySample, &digest, &plan); err != nil {
-			return "", util.NewStackErrorf("scan EXPLAIN plan digest: %w", err)
-		}
-		if normalizeExplainSQL(querySample) != normalizedExplainSQL {
-			continue
-		}
-		operators, err := planOperators(plan)
-		if err == nil && slices.Equal(newDigestOperators, digestLookupOperators(operators)) {
-			return digest, nil
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return "", util.NewStackErrorf("read EXPLAIN plan digests: %w", err)
-	}
-	return "", util.NewStackErrorf("no plan digest found for EXPLAIN of SQL in schema %q", schema)
-}
 
 func normalizeExplainSQL(sqlText string) string {
 	var normalized strings.Builder
@@ -384,31 +270,6 @@ func parseTiDBArgument(text string) (any, error) {
 	return text, nil
 }
 
-func (r *SQLRepository) Bindings(ctx context.Context, digest, schema string) (string, error) {
-	queryCtx, cancel := context.WithTimeout(ctx, queryTimeout)
-	defer cancel()
-	r.logger.Info("execute SQL", zap.String("sql", compareBindingsQuery), zap.String("digest", digest), zap.String("schema", schema))
-	rows, err := r.db.QueryContext(queryCtx, compareBindingsQuery, digest, schema)
-	if err != nil {
-		return "", util.NewStackErrorf("query bindings: %w", err)
-	}
-	defer rows.Close()
-	columns, values, err := readStringRows(rows)
-	if err != nil {
-		return "", fmt.Errorf("read bindings: %w", err)
-	}
-	var binding strings.Builder
-	for i, row := range values {
-		if i > 0 {
-			binding.WriteByte('\n')
-		}
-		for j, value := range row {
-			fmt.Fprintf(&binding, "%s: %s\n", columns[j], value)
-		}
-	}
-	return binding.String(), nil
-}
-
 func readStringRows(rows *sql.Rows) ([]string, [][]string, error) {
 	columns, err := rows.Columns()
 	if err != nil {
@@ -435,5 +296,3 @@ func readStringRows(rows *sql.Rows) ([]string, [][]string, error) {
 	}
 	return columns, result, nil
 }
-
-var _ CompareRepository = (*SQLRepository)(nil)

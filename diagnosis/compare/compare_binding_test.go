@@ -30,9 +30,9 @@ func TestCurrentPlanBinding(t *testing.T) {
 func TestComparisonReportColumnsAndHierarchy(t *testing.T) {
 	sample := Sample{Schema: "test", SQL: "select 1"}
 	report := renderComparison([]comparedPlan{
-		{statement: StatementPlan{Sample: sample, SQLDigest: "aaaaaaaa1", PlanDigest: "11111111", ExecCount: 9, ExecTime: 1234567890}, bindings: "select /*+ H() */ 1"},
-		{statement: StatementPlan{Sample: Sample{SQL: "select 2"}, SQLDigest: "bbbbbbbb2", PlanDigest: "22222222", ExecCount: 8}},
-		{statement: StatementPlan{Sample: sample, SQLDigest: "aaaaaaaa1", PlanDigest: "33333333", ExecCount: 7}},
+		{statement: SQLInfo{Sample: sample, SQLDigest: "aaaaaaaa1", PlanDigest: "11111111", ExecCount: 9, ExecTime: 1234567890}, bindings: "select /*+ H() */ 1"},
+		{statement: SQLInfo{Sample: Sample{SQL: "select 2"}, SQLDigest: "bbbbbbbb2", PlanDigest: "22222222", ExecCount: 8}},
+		{statement: SQLInfo{Sample: sample, SQLDigest: "aaaaaaaa1", PlanDigest: "33333333", ExecCount: 7}},
 	})
 	for _, text := range []string{
 		"| ExecCount | Total ExecTime | Current Plan | New Plan | Plan Change | Binding of the Current Plan |",

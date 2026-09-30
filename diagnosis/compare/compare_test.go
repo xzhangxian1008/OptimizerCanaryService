@@ -7,12 +7,12 @@ import (
 )
 
 type fakeCompareRepository struct {
-	statements []StatementPlan
+	statements []SQLInfo
 	newPlans   map[Sample]string
 	bindings   map[string]string
 }
 
-func (f *fakeCompareRepository) StatementPlans(context.Context) ([]StatementPlan, error) {
+func (f *fakeCompareRepository) GetSQLInfo(context.Context) ([]SQLInfo, error) {
 	return f.statements, nil
 }
 
@@ -30,7 +30,7 @@ func TestComparerOnlyReportsChangedIDAndTask(t *testing.T) {
 	oldPlan := "id\ttask\testRows\nA\troot\t1"
 	newPlanWithDifferentColumns := "id\testRows\ttask\nA\t99\troot"
 	repo := &fakeCompareRepository{
-		statements: []StatementPlan{
+		statements: []SQLInfo{
 			{Sample: same, SQLDigest: "1111111111111111", PlanDigest: "aaaaaaaaaaaaaaaa", ExecCount: 2, Plan: oldPlan},
 			{Sample: changed, SQLDigest: "2222222222222222", PlanDigest: "bbbbbbbbbbbbbbbb", ExecCount: 3, ExecTime: 1000000000, PlanHint: "HASH_AGG()", Plan: oldPlan},
 			{Sample: changed, SQLDigest: "2222222222222222", PlanDigest: "bbbbbbbbbbbbbbbb", ExecCount: 4, ExecTime: 2000000000, PlanHint: "HASH_AGG()", Plan: oldPlan},
@@ -98,7 +98,7 @@ func TestComparerIgnoresOperatorNumbersAndSortsByExecTime(t *testing.T) {
 	same := "id\testRows\ttask\nHashAgg_13\t1\troot\n└─TableReader_14\t1\troot\n  └─HashAgg_6\t1\tcop[tikv]\n    └─TableFullScan_12\t1\tcop[tikv]"
 	a, b, c := Sample{SQL: "select 1"}, Sample{SQL: "select 2"}, Sample{SQL: "select 3"}
 	repo := &fakeCompareRepository{
-		statements: []StatementPlan{
+		statements: []SQLInfo{
 			{Sample: a, SQLDigest: "d8061f40", PlanDigest: "3880073a", Plan: current, ExecCount: 100, ExecTime: 100},
 			{Sample: b, SQLDigest: "bbbbbbbb", PlanDigest: "bbbbbbbb", Plan: current, ExecCount: 50, ExecTime: 10},
 			{Sample: c, SQLDigest: "cccccccc", PlanDigest: "cccccccc", Plan: current, ExecCount: 1, ExecTime: 20},

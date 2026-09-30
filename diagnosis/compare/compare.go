@@ -10,8 +10,9 @@ import (
 	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis/util"
 )
 
-// StatementPlan is one plan recorded in the cluster statement summary.
-type StatementPlan struct {
+// SQLInfo contains sql info recorded in the `information_schema.cluster_statement_summary` table.
+// However, it contains only part of the info in one row.
+type SQLInfo struct {
 	Sample
 	SQLDigest  string
 	PlanDigest string
@@ -22,7 +23,7 @@ type StatementPlan struct {
 }
 
 type CompareRepository interface {
-	StatementPlans(context.Context) ([]StatementPlan, error)
+	GetSQLInfo(context.Context) ([]SQLInfo, error)
 	ExplainPlan(context.Context, Sample) (string, error)
 }
 
@@ -102,7 +103,7 @@ func operatorName(id string) string {
 }
 
 type comparedPlan struct {
-	statement     StatementPlan
+	statement     SQLInfo
 	newPlan       string
 	newPlanDigest string
 	bindings      string
@@ -110,50 +111,50 @@ type comparedPlan struct {
 
 func (c *Comparer) Compare(ctx context.Context) (string, error) {
 	// Finish collecting the snapshot before EXPLAIN adds more summary entries.
-	statements, err := c.repository.StatementPlans(ctx)
+	sqlInfos, err := c.repository.GetSQLInfo(ctx)
 	if err != nil {
 		return "", err
 	}
-	statements = aggregateStatementPlans(statements)
+	sqlInfos = aggregateSqlInfos(sqlInfos)
 	type explanation struct{ plan, digest string }
 	explained := make(map[Sample]explanation)
 	var changed []comparedPlan
-	for _, statement := range statements {
+	for _, sqlInfo := range sqlInfos {
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
-		oldOperators, err := planOperators(statement.Plan)
+		oldOperators, err := planOperators(sqlInfo.Plan)
 		if err != nil {
-			return "", fmt.Errorf("SQL digest %s, plan digest %s: read current plan: %w", statement.SQLDigest, statement.PlanDigest, err)
+			return "", fmt.Errorf("SQL digest %s, plan digest %s: read current plan: %w", sqlInfo.SQLDigest, sqlInfo.PlanDigest, err)
 		}
-		newPlan, ok := explained[statement.Sample]
+		newPlan, ok := explained[sqlInfo.Sample]
 		if !ok {
 			if repository, ok := c.repository.(planDigestRepository); ok {
-				newPlan.plan, newPlan.digest, err = repository.ExplainPlanWithDigest(ctx, statement.Sample)
+				newPlan.plan, newPlan.digest, err = repository.ExplainPlanWithDigest(ctx, sqlInfo.Sample)
 			} else {
-				newPlan.plan, err = c.repository.ExplainPlan(ctx, statement.Sample)
+				newPlan.plan, err = c.repository.ExplainPlan(ctx, sqlInfo.Sample)
 				// Repositories that only provide EXPLAIN text are mainly useful
 				// for tests and adapters; preserve a visible digest in that case.
-				newPlan.digest = statement.PlanDigest
+				newPlan.digest = sqlInfo.PlanDigest
 			}
 			if err != nil {
-				return "", fmt.Errorf("SQL digest %s: %w", statement.SQLDigest, err)
+				return "", fmt.Errorf("SQL digest %s: %w", sqlInfo.SQLDigest, err)
 			}
-			explained[statement.Sample] = newPlan
+			explained[sqlInfo.Sample] = newPlan
 		}
 		newOperators, err := planOperators(newPlan.plan)
 		if err != nil {
-			return "", fmt.Errorf("SQL digest %s: read new plan: %w", statement.SQLDigest, err)
+			return "", fmt.Errorf("SQL digest %s: read new plan: %w", sqlInfo.SQLDigest, err)
 		}
 		if slices.Equal(oldOperators, newOperators) {
 			continue
 		}
-		binding, err := currentPlanBinding(statement.SQL, statement.PlanHint)
+		binding, err := currentPlanBinding(sqlInfo.SQL, sqlInfo.PlanHint)
 		if err != nil {
-			return "", fmt.Errorf("SQL digest %s: build current plan binding: %w", statement.SQLDigest, err)
+			return "", fmt.Errorf("SQL digest %s: build current plan binding: %w", sqlInfo.SQLDigest, err)
 		}
 		changed = append(changed, comparedPlan{
-			statement: statement, newPlan: newPlan.plan, newPlanDigest: newPlan.digest, bindings: binding,
+			statement: sqlInfo, newPlan: newPlan.plan, newPlanDigest: newPlan.digest, bindings: binding,
 		})
 	}
 	slices.SortFunc(changed, func(a, b comparedPlan) int {
@@ -171,21 +172,21 @@ func (c *Comparer) Compare(ctx context.Context) (string, error) {
 	return renderComparison(changed), nil
 }
 
-func aggregateStatementPlans(statements []StatementPlan) []StatementPlan {
+func aggregateSqlInfos(sqlInfos []SQLInfo) []SQLInfo {
 	type key struct{ schema, digest, planDigest string }
 	indices := make(map[key]int)
-	result := make([]StatementPlan, 0, len(statements))
-	for _, statement := range statements {
-		k := key{statement.Schema, statement.SQLDigest, statement.PlanDigest}
+	result := make([]SQLInfo, 0, len(sqlInfos))
+	for _, sqlInfo := range sqlInfos {
+		k := key{sqlInfo.Schema, sqlInfo.SQLDigest, sqlInfo.PlanDigest}
 		if i, ok := indices[k]; ok {
-			result[i].ExecCount += statement.ExecCount
-			result[i].ExecTime += statement.ExecTime
+			result[i].ExecCount += sqlInfo.ExecCount
+			result[i].ExecTime += sqlInfo.ExecTime
 		} else {
 			indices[k] = len(result)
-			result = append(result, statement)
+			result = append(result, sqlInfo)
 		}
 	}
-	slices.SortFunc(result, func(a, b StatementPlan) int {
+	slices.SortFunc(result, func(a, b SQLInfo) int {
 		if order := strings.Compare(a.SQLDigest, b.SQLDigest); order != 0 {
 			return order
 		}
@@ -271,12 +272,12 @@ func uniqueHeadingAnchor(title string, anchors map[string]int) string {
 	return anchor
 }
 
-func writeDetail(details *strings.Builder, title string, statement StatementPlan, planDigest, content string, anchors map[string]int) string {
+func writeDetail(details *strings.Builder, title string, statement SQLInfo, planDigest, content string, anchors map[string]int) string {
 	anchor := uniqueHeadingAnchor(title, anchors)
 	return writeDetailWithAnchor(details, anchor, title, statement, planDigest, content)
 }
 
-func writeDetailWithAnchor(details *strings.Builder, anchor, title string, statement StatementPlan, planDigest, content string) string {
+func writeDetailWithAnchor(details *strings.Builder, anchor, title string, statement SQLInfo, planDigest, content string) string {
 	fmt.Fprintf(details, "\n<a id=\"%s\"></a>\n\n### %s\n\n", html.EscapeString(anchor), title)
 	fmt.Fprintf(details, "Schema: %s  \nSQL Digest: %s  \nPlan Digest: %s\n\n",
 		markdownCell(statement.Schema), markdownCell(statement.SQLDigest), markdownCell(planDigest))
