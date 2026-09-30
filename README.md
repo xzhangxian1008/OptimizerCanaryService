@@ -100,11 +100,44 @@ connection unchanged.
 
 ## Run
 
-Pass the HTTP listen address as a named command-line argument:
+The default `service` mode starts the HTTP server. Pass the HTTP listen address
+as a named command-line argument:
 
 ```bash
 go run ./cmd -http-addr '127.0.0.1:8080'
 ```
+
+The `prepare` mode is a one-shot test-data preparation command. It creates the
+nine core TPC-C tables in a dedicated schema and loads a deterministic 100
+warehouse data set with 832,100 rows. It then executes 36 structurally distinct
+queries across the warehouse, district, customer, orders, new-order,
+order-line, item, and stock tables. The target cluster must have at least one
+TiFlash node: preparation sets one TiFlash replica on each of the nine tables
+and waits up to ten minutes for all replicas to become available. Each query is
+then assigned one of two session-binding strategies at random: either
+`USE_INDEX` to retain the existing forced-scan behavior, or
+`READ_FROM_STORAGE(TIFLASH[...])` to force TiFlash. The binding is removed
+before the command verifies that the optimizer's natural plan is different.
+Each query also receives a unique random weight from 1 to 100. After setup, the
+command starts the requested number of workers; every worker owns an independent
+TiDB session with all session bindings installed and repeatedly selects one SQL
+with probability `weight / total weight` until the requested duration expires.
+No global binding is created:
+
+```bash
+go run ./cmd -mode prepare \
+  -dsn 'root@tcp(127.0.0.1:4000)/' \
+  -prepare-schema 'optimizer_canary_prepare' \
+  -prepare-concurrency 4 \
+  -prepare-duration 1m
+```
+
+`-prepare-concurrency` defaults to `4`, and `-prepare-duration` defaults to
+`1m`.
+
+The command is idempotent for its generated primary-key rows and does not drop
+the schema or tables. Use a schema dedicated to this test; an existing table
+with the same name but a different definition causes preparation to fail.
 
 The service starts without a TiDB connection. Configure it through HTTP before
 calling `POST /validate`:
