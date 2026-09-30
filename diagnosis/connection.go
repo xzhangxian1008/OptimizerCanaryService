@@ -7,6 +7,8 @@ import (
 	"sync"
 
 	"database/sql"
+
+	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis/compare"
 	"go.uber.org/zap"
 )
 
@@ -104,4 +106,12 @@ func (m *ConnectionManager) Explain(ctx context.Context, sample Sample) error {
 		return err
 	}
 	return NewSQLRepository(db, m.logger).Explain(ctx, sample)
+}
+
+func (m *ConnectionManager) Compare(ctx context.Context) (string, error) {
+	db, err := m.current()
+	if err != nil {
+		return "", err
+	}
+	return compare.NewComparer(compare.NewSQLRepository(db, m.logger)).Compare(ctx)
 }

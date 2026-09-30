@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis/util"
 	"go.uber.org/zap"
 )
 
@@ -42,7 +43,7 @@ func (h *ConnectionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var request connectionRequest
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
 	if err := decoder.Decode(&request); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{
+		util.WriteJSON(w, http.StatusBadRequest, map[string]string{
 			"status":  "failed",
 			"message": "request body must be JSON with a non-empty dsn",
 			"warning": testEndpointWarning,
@@ -50,7 +51,7 @@ func (h *ConnectionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.TrimSpace(request.DSN) == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{
+		util.WriteJSON(w, http.StatusBadRequest, map[string]string{
 			"status":  "failed",
 			"message": "request body must contain a non-empty dsn",
 			"warning": testEndpointWarning,
@@ -81,7 +82,7 @@ func (h *ConnectionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		zap.Bool("connected", result.Connected),
 		zap.Error(result.Err),
 	)
-	writeJSON(w, status, response)
+	util.WriteJSON(w, status, response)
 }
 
 var _ connectionReplacer = (*ConnectionManager)(nil)

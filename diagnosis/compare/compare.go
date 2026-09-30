@@ -1,4 +1,4 @@
-package diagnosis
+package compare
 
 import (
 	"context"
@@ -6,6 +6,8 @@ import (
 	"html"
 	"slices"
 	"strings"
+
+	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis/util"
 )
 
 // StatementPlan is one plan recorded in the cluster statement summary.
@@ -70,17 +72,17 @@ func planOperators(plan string) ([]planOperator, error) {
 				}
 			}
 			if idColumn < 0 || taskColumn < 0 {
-				return nil, newStackErrorf("plan header must contain id and task columns")
+				return nil, util.NewStackErrorf("plan header must contain id and task columns")
 			}
 			continue
 		}
 		if len(fields) <= max(idColumn, taskColumn) || fields[idColumn] == "" || fields[taskColumn] == "" {
-			return nil, newStackErrorf("plan row is missing id or task: %q", line)
+			return nil, util.NewStackErrorf("plan row is missing id or task: %q", line)
 		}
 		operators = append(operators, planOperator{id: operatorName(fields[idColumn]), task: fields[taskColumn]})
 	}
 	if len(operators) == 0 {
-		return nil, newStackErrorf("plan has no operators")
+		return nil, util.NewStackErrorf("plan has no operators")
 	}
 	return operators, nil
 }
