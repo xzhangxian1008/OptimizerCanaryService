@@ -78,6 +78,19 @@ func TestPlanOperatorsSupportsWhitespacePlans(t *testing.T) {
 	}
 }
 
+func TestParsePlanHandlesLeadingFormattingTabs(t *testing.T) {
+	plan, err := parsePlan("\tid\ttask\n" +
+		"\tHashAgg_1\troot\n" +
+		"\t└─TableReader_2\troot\n" +
+		"\t  └─TableFullScan_3\tcop[tikv]")
+	if err != nil {
+		t.Fatalf("parsePlan returned error: %v", err)
+	}
+	if plan.Root.Operator != "HashAgg" || len(plan.Root.Children) != 1 || plan.Root.Children[0].Operator != "TableReader" {
+		t.Fatalf("unexpected plan tree: %+v", plan.Root)
+	}
+}
+
 func TestParsePlanCollectsReaderOperators(t *testing.T) {
 	plan, err := parsePlan("id\ttask\taccess object\n" +
 		"HashJoin_1\troot\t\n" +

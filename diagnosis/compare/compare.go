@@ -204,6 +204,12 @@ func isIndexReaderOperator(operator string) bool {
 
 func planDepth(line string) (int, string) {
 	depth := 0
+	// PLAN values read from cluster_statements_summary may contain one
+	// formatting tab before every physical row. It is not a plan column and
+	// must be removed before looking for the tree branch markers.
+	for strings.HasPrefix(line, "\t") {
+		line = line[1:]
+	}
 	for {
 		if strings.HasPrefix(line, "│ ") {
 			depth++
