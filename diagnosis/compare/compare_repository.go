@@ -38,6 +38,7 @@ WHERE sql_digest = ? AND status <> 'deleted'
   AND (default_db = ? OR default_db = '')
 ORDER BY update_time, bind_sql`
 
+// TODO(xzx): we should not get explain plan digest by this way
 const explainPlanDigestQuery = `SELECT COALESCE(query_sample_text, ''), COALESCE(plan_digest, ''), COALESCE(plan, '')
 FROM information_schema.cluster_statements_summary
 WHERE LOWER(stmt_type) IN ('explainsql', 'explain')

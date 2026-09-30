@@ -391,25 +391,34 @@ func (c *Comparer) Compare(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	sqlInfos = aggregateSqlInfos(sqlInfos)
+
 	type explanation struct{ plan, digest string }
 	explained := make(map[Sample]explanation)
+
 	type sqlKey struct{ schema, digest string }
 	checkedSQLs := make(map[sqlKey]struct{})
 	changedSQLs := make(map[sqlKey]struct{})
+
 	var totalExecCount uint64
 	var changed []comparedPlan
+
 	for _, sqlInfo := range sqlInfos {
+		totalExecCount += sqlInfo.ExecCount
+
 		key := sqlKey{schema: sqlInfo.Schema, digest: sqlInfo.SQLDigest}
 		checkedSQLs[key] = struct{}{}
-		totalExecCount += sqlInfo.ExecCount
+
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
+
 		oldPlan, err := parsePlan(sqlInfo.Plan)
 		if err != nil {
 			return "", fmt.Errorf("SQL digest %s, plan digest %s: read current plan: %w", sqlInfo.SQLDigest, sqlInfo.PlanDigest, err)
 		}
+
 		newPlan, ok := explained[sqlInfo.Sample]
 		if !ok {
 			if repository, ok := c.repository.(planDigestRepository); ok {
@@ -420,29 +429,36 @@ func (c *Comparer) Compare(ctx context.Context) (string, error) {
 				// for tests and adapters; preserve a visible digest in that case.
 				newPlan.digest = sqlInfo.PlanDigest
 			}
+
 			if err != nil {
 				return "", fmt.Errorf("SQL digest %s: %w", sqlInfo.SQLDigest, err)
 			}
+
 			explained[sqlInfo.Sample] = newPlan
 		}
+
 		newPlanParsed, err := parsePlan(newPlan.plan)
 		if err != nil {
 			return "", fmt.Errorf("SQL digest %s: read new plan: %w", sqlInfo.SQLDigest, err)
 		}
+
 		equal, planChange := comparePlans(oldPlan, newPlanParsed)
 		if equal {
 			continue
 		}
+
 		binding, err := currentPlanBinding(sqlInfo.SQL, sqlInfo.PlanHint)
 		if err != nil {
 			return "", fmt.Errorf("SQL digest %s: build current plan binding: %w", sqlInfo.SQLDigest, err)
 		}
+
 		changed = append(changed, comparedPlan{
 			statement: sqlInfo, newPlan: newPlan.plan, newPlanDigest: newPlan.digest,
 			bindings: binding, planChange: planChange,
 		})
 		changedSQLs[key] = struct{}{}
 	}
+
 	slices.SortFunc(changed, func(a, b comparedPlan) int {
 		if a.statement.ExecTime > b.statement.ExecTime {
 			return -1
@@ -455,6 +471,7 @@ func (c *Comparer) Compare(ctx context.Context) (string, error) {
 		}
 		return strings.Compare(a.statement.PlanDigest, b.statement.PlanDigest)
 	})
+
 	return renderComparison(changed, reportSummary{
 		checkedSQLs:    len(checkedSQLs),
 		totalExecCount: totalExecCount,
