@@ -2,9 +2,12 @@ package compare
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"html"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis/util"
@@ -39,26 +42,59 @@ func NewComparer(repository CompareRepository) *Comparer {
 	return &Comparer{repository: repository}
 }
 
-type planOperator struct {
-	id   string
-	task string
+type PlanNode struct {
+	Operator    string
+	ID          int
+	Task        string
+	Index       string
+	accessTable string
+	Children    []*PlanNode
 }
 
-// planOperators reads TiDB's tab-separated PLAN/EXPLAIN output. The summary's
-// PLAN places task before estRows, whereas EXPLAIN places it after estRows.
-// Ignore numeric operator ID suffixes; preserve task, branches and row order.
-func planOperators(plan string) ([]planOperator, error) {
-	var operators []planOperator
-	idColumn, taskColumn := -1, -1
-	for _, line := range strings.Split(plan, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
+func (n *PlanNode) String() string {
+	value, _ := json.Marshal(struct {
+		Operator string `json:"operator"`
+		Task     string `json:"task"`
+		Index    string `json:"index"`
+		Table    string `json:"accessTable"`
+	}{n.Operator, n.Task, n.Index, n.accessTable})
+	return string(value)
+}
+
+type Plan struct {
+	Root        *PlanNode
+	PostOrder   []*PlanNode
+	reader      []*PlanNode
+	indexReader []*PlanNode
+}
+
+func (p *Plan) StringInPostOrder() string {
+	parts := make([]string, 0, len(p.PostOrder))
+	for _, node := range p.PostOrder {
+		parts = append(parts, node.String())
+	}
+	return strings.Join(parts, "")
+}
+
+var operatorIDPattern = regexp.MustCompile(`^(.*)_([0-9]+)(?:\([^)]*\))?$`)
+
+// TODO I think this function needs more and more tests
+func parsePlan(planText string) (*Plan, error) {
+	idColumn, taskColumn, accessColumn, infoColumn := -1, -1, -1, -1
+	type planRow struct {
+		node  *PlanNode
+		depth int
+	}
+	rows := make([]planRow, 0)
+	baseDepth := -1
+	for _, line := range strings.Split(planText, "\n") {
+		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		tabSeparated := strings.ContainsRune(line, '\t')
-		fields := strings.Fields(line)
-		if tabSeparated {
-			fields = strings.Split(line, "\t")
+		depth, content := planDepth(line)
+		fields := strings.Fields(content)
+		if strings.ContainsRune(line, '\t') {
+			fields = strings.Split(content, "\t")
 		}
 		for i := range fields {
 			fields[i] = strings.TrimSpace(fields[i])
@@ -70,6 +106,10 @@ func planOperators(plan string) ([]planOperator, error) {
 					idColumn = i
 				case "task":
 					taskColumn = i
+				case "access object":
+					accessColumn = i
+				case "operator info":
+					infoColumn = i
 				}
 			}
 			if idColumn < 0 || taskColumn < 0 {
@@ -80,26 +120,249 @@ func planOperators(plan string) ([]planOperator, error) {
 		if len(fields) <= max(idColumn, taskColumn) || fields[idColumn] == "" || fields[taskColumn] == "" {
 			return nil, util.NewStackErrorf("plan row is missing id or task: %q", line)
 		}
-		operators = append(operators, planOperator{id: operatorName(fields[idColumn]), task: fields[taskColumn]})
+		id, operator, err := parseOperatorID(fields[idColumn])
+		if err != nil {
+			return nil, err
+		}
+		node := &PlanNode{Operator: operator, ID: id, Task: normalizeTask(fields[taskColumn])}
+		if accessColumn >= 0 && accessColumn < len(fields) {
+			node.Index = planIndex(fields[accessColumn])
+		}
+		if infoColumn >= 0 && infoColumn < len(fields) && node.Index == "" {
+			node.Index = planIndex(fields[infoColumn])
+		}
+		if accessColumn >= 0 && accessColumn < len(fields) {
+			node.accessTable = planAccessTable(fields[accessColumn])
+		}
+		if infoColumn >= 0 && infoColumn < len(fields) && node.accessTable == "" {
+			node.accessTable = planAccessTable(fields[infoColumn])
+		}
+		// Some EXPLAIN renderers prefix the root row with └─. Use the first
+		// row's depth as the baseline so that form and the usual unprefixed
+		// root form produce the same tree.
+		if baseDepth < 0 {
+			baseDepth = depth
+		}
+		depth -= baseDepth
+		rows = append(rows, planRow{node, depth})
 	}
-	if len(operators) == 0 {
+	if len(rows) == 0 {
 		return nil, util.NewStackErrorf("plan has no operators")
 	}
-	return operators, nil
+	result := &Plan{}
+	stack := make([]*PlanNode, 0)
+	for _, row := range rows {
+		if isReaderOperator(row.node.Operator) {
+			result.reader = append(result.reader, row.node)
+		}
+		if isIndexReaderOperator(row.node.Operator) {
+			result.indexReader = append(result.indexReader, row.node)
+		}
+		if row.depth == 0 {
+			if result.Root != nil {
+				return nil, util.NewStackErrorf("plan has multiple roots")
+			}
+			result.Root = row.node
+			stack = []*PlanNode{row.node}
+			continue
+		}
+		if row.depth > len(stack) {
+			return nil, util.NewStackErrorf("plan has invalid tree depth %d", row.depth)
+		}
+		stack = stack[:row.depth]
+		parent := stack[len(stack)-1]
+		parent.Children = append(parent.Children, row.node)
+		stack = append(stack, row.node)
+	}
+	postOrder(result.Root, &result.PostOrder)
+	return result, nil
 }
 
-// operatorName removes only a trailing underscore followed entirely by digits.
-func operatorName(id string) string {
-	i := strings.LastIndexByte(id, '_')
-	if i < 0 || i == len(id)-1 {
-		return id
+// isReaderOperator identifies physical operators that read rows from a
+// storage engine or an index. Operators such as Selection and Projection are
+// deliberately excluded because they only transform rows produced by one of
+// these readers.
+func isReaderOperator(operator string) bool {
+	return operator == "TableReader" ||
+		operator == "TableFullScan" ||
+		operator == "TableScan" ||
+		operator == "PointGet" ||
+		operator == "BatchPointGet" ||
+		operator == "Point_Get" ||
+		operator == "Batch_Point_Get"
+}
+
+func isIndexReaderOperator(operator string) bool {
+	return operator == "IndexReader" ||
+		operator == "IndexLookUpReader" ||
+		operator == "IndexMergeReader" ||
+		strings.HasSuffix(operator, "IndexFullScan") ||
+		strings.HasSuffix(operator, "IndexScan") ||
+		operator == "IndexLookUp" ||
+		operator == "IndexLookup"
+}
+
+func planDepth(line string) (int, string) {
+	depth := 0
+	for {
+		if strings.HasPrefix(line, "│ ") {
+			depth++
+			line = line[len("│ "):]
+			continue
+		}
+		if strings.HasPrefix(line, "  ") {
+			depth++
+			line = line[len("  "):]
+			continue
+		}
+		break
 	}
-	for _, c := range id[i+1:] {
-		if c < '0' || c > '9' {
-			return id
+	if strings.HasPrefix(line, "├─") {
+		line = line[len("├─"):]
+		depth++
+	} else if strings.HasPrefix(line, "└─") {
+		line = line[len("└─"):]
+		depth++
+	}
+	return depth, line
+}
+
+func parseOperatorID(value string) (int, string, error) {
+	value = strings.TrimSpace(value)
+	match := operatorIDPattern.FindStringSubmatch(value)
+	if match == nil {
+		// A real TiDB operator normally has a numeric suffix. Keeping a
+		// suffix-less value usable makes the parser robust for explain
+		// adapters and tests that use symbolic operator IDs; IDs are ignored
+		// when plans are compared.
+		return 0, value, nil
+	}
+	id, err := strconv.Atoi(match[2])
+	if err != nil {
+		return 0, "", util.NewStackErrorf("parse operator id %q: %w", value, err)
+	}
+	return id, match[1], nil
+}
+
+func normalizeTask(task string) string {
+	task = strings.TrimSpace(task)
+	for _, prefix := range []string{"cop[", "mpp["} {
+		if strings.HasPrefix(task, prefix) && strings.HasSuffix(task, "]") {
+			return task[len(prefix) : len(task)-1]
 		}
 	}
-	return id[:i]
+	return task
+}
+
+func planIndex(value string) string {
+	position := strings.Index(strings.ToLower(value), "index:")
+	if position < 0 {
+		return ""
+	}
+	value = strings.TrimSpace(value[position+len("index:"):])
+	if comma := strings.IndexByte(value, ','); comma >= 0 {
+		value = value[:comma]
+	}
+	return strings.TrimSpace(value)
+}
+
+func planAccessTable(value string) string {
+	position := strings.Index(strings.ToLower(value), "table:")
+	if position < 0 {
+		return ""
+	}
+	value = strings.TrimSpace(value[position+len("table:"):])
+	if comma := strings.IndexByte(value, ','); comma >= 0 {
+		value = value[:comma]
+	}
+	return strings.TrimSpace(value)
+}
+
+func postOrder(node *PlanNode, result *[]*PlanNode) {
+	for _, child := range node.Children {
+		postOrder(child, result)
+	}
+	*result = append(*result, node)
+}
+
+func plansEqual(left, right *Plan) bool {
+	equal, _ := comparePlans(left, right)
+	return equal
+}
+
+// comparePlans deliberately checks the reader collections before the rest of
+// the tree. A storage-engine change is the most useful explanation to show in
+// the report, so later comparisons are skipped once it is found.
+func comparePlans(left, right *Plan) (bool, string) {
+	if !equalReaderNodes(left.reader, right.reader) {
+		return false, readerChangeReason(left.reader, right.reader, left.indexReader, right.indexReader)
+	}
+	if !equalReaderNodes(left.indexReader, right.indexReader) {
+		return false, readerChangeReason(left.indexReader, right.indexReader, nil, nil)
+	}
+	if !planNodesEqual(left.Root, right.Root) {
+		return false, "others"
+	}
+	return true, ""
+}
+
+func planReadersEqual(left, right *Plan) bool {
+	return equalReaderNodes(left.reader, right.reader) && equalReaderNodes(left.indexReader, right.indexReader)
+}
+
+func equalReaderNodes(left, right []*PlanNode) bool {
+	leftStrings := make([]string, 0, len(left))
+	for _, node := range left {
+		leftStrings = append(leftStrings, node.String())
+	}
+	rightStrings := make([]string, 0, len(right))
+	for _, node := range right {
+		rightStrings = append(rightStrings, node.String())
+	}
+	slices.Sort(leftStrings)
+	slices.Sort(rightStrings)
+	return slices.Equal(leftStrings, rightStrings)
+}
+
+func readerChangeReason(left, right, leftOther, rightOther []*PlanNode) string {
+	leftNodes := append(append([]*PlanNode(nil), left...), leftOther...)
+	rightNodes := append(append([]*PlanNode(nil), right...), rightOther...)
+	if len(leftNodes) != len(rightNodes) {
+		return "others"
+	}
+	sortPlanNodes(leftNodes)
+	sortPlanNodes(rightNodes)
+	for i := range leftNodes {
+		oldNode, newNode := leftNodes[i], rightNodes[i]
+		if oldNode.Operator != newNode.Operator {
+			return strings.ToLower(oldNode.Operator) + "->" + strings.ToLower(newNode.Operator)
+		}
+		if oldNode.Task != newNode.Task {
+			return strings.ToLower(oldNode.Task) + "->" + strings.ToLower(newNode.Task)
+		}
+	}
+	return "others"
+}
+
+func sortPlanNodes(nodes []*PlanNode) {
+	slices.SortFunc(nodes, func(left, right *PlanNode) int {
+		return strings.Compare(left.String(), right.String())
+	})
+}
+
+func planNodesEqual(left, right *PlanNode) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	if left.Operator != right.Operator || left.Task != right.Task || left.Index != right.Index || left.accessTable != right.accessTable || len(left.Children) != len(right.Children) {
+		return false
+	}
+	for i := range left.Children {
+		if !planNodesEqual(left.Children[i], right.Children[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 type comparedPlan struct {
@@ -107,6 +370,7 @@ type comparedPlan struct {
 	newPlan       string
 	newPlanDigest string
 	bindings      string
+	planChange    string
 }
 
 type reportSummary struct {
@@ -136,7 +400,7 @@ func (c *Comparer) Compare(ctx context.Context) (string, error) {
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
-		oldOperators, err := planOperators(sqlInfo.Plan)
+		oldPlan, err := parsePlan(sqlInfo.Plan)
 		if err != nil {
 			return "", fmt.Errorf("SQL digest %s, plan digest %s: read current plan: %w", sqlInfo.SQLDigest, sqlInfo.PlanDigest, err)
 		}
@@ -155,11 +419,12 @@ func (c *Comparer) Compare(ctx context.Context) (string, error) {
 			}
 			explained[sqlInfo.Sample] = newPlan
 		}
-		newOperators, err := planOperators(newPlan.plan)
+		newPlanParsed, err := parsePlan(newPlan.plan)
 		if err != nil {
 			return "", fmt.Errorf("SQL digest %s: read new plan: %w", sqlInfo.SQLDigest, err)
 		}
-		if slices.Equal(oldOperators, newOperators) {
+		equal, planChange := comparePlans(oldPlan, newPlanParsed)
+		if equal {
 			continue
 		}
 		binding, err := currentPlanBinding(sqlInfo.SQL, sqlInfo.PlanHint)
@@ -167,7 +432,8 @@ func (c *Comparer) Compare(ctx context.Context) (string, error) {
 			return "", fmt.Errorf("SQL digest %s: build current plan binding: %w", sqlInfo.SQLDigest, err)
 		}
 		changed = append(changed, comparedPlan{
-			statement: sqlInfo, newPlan: newPlan.plan, newPlanDigest: newPlan.digest, bindings: binding,
+			statement: sqlInfo, newPlan: newPlan.plan, newPlanDigest: newPlan.digest,
+			bindings: binding, planChange: planChange,
 		})
 		changedSQLs[key] = struct{}{}
 	}
@@ -270,10 +536,11 @@ func renderComparison(plans []comparedPlan, summary reportSummary) string {
 			bindingText = bindingStatement(statement.SQL, bindingText)
 		}
 		bindingAnchor = writeDetailWithAnchor(details, bindingAnchor, bindingTitle, statement, statement.PlanDigest, bindingText)
-		fmt.Fprintf(&report, "| [%s](#%s) | %s | %d | [%s](#%s) | [%s](#%s) | N/A | [%s](#%s) |\n",
+		fmt.Fprintf(&report, "| [%s](#%s) | %s | %d | [%s](#%s) | [%s](#%s) | %s | [%s](#%s) |\n",
 			markdownCell(sqlDigestPrefix), sqlAnchor, formatExecTime(statement.ExecTime), statement.ExecCount,
 			markdownCell(firstEight(statement.PlanDigest)), currentAnchor,
 			markdownCell(firstEight(plan.newPlanDigest)), newAnchor,
+			markdownCell(plan.planChange),
 			markdownCell("binding stmt"), bindingAnchor)
 	}
 	if len(plans) == 0 {

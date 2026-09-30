@@ -121,21 +121,6 @@ func isDoubleQuotedStringStart(sqlText string, index int) bool {
 	}
 }
 
-// digestLookupOperators accounts for the task name difference between direct
-// EXPLAIN output (mpp[...]) and the plan text stored in statement summary
-// (cop[...]). This normalization is only used to locate the new plan digest;
-// old/new plan comparison still uses the original id/task values.
-func digestLookupOperators(operators []planOperator) []planOperator {
-	normalized := make([]planOperator, len(operators))
-	copy(normalized, operators)
-	for i := range normalized {
-		if strings.HasPrefix(normalized[i].task, "mpp[") {
-			normalized[i].task = "cop" + normalized[i].task[len("mpp"):]
-		}
-	}
-	return normalized
-}
-
 // explainableSample removes the annotation TiDB appends to a server-side
 // prepared statement in QUERY_SAMPLE_TEXT and turns its values into database
 // parameters. For example:

@@ -54,7 +54,7 @@ func TestComparerOnlyReportsChangedIDAndTask(t *testing.T) {
 	if strings.Contains(report, "11111111_aaaaaaaa") {
 		t.Fatalf("unchanged plan was included: %s", report)
 	}
-	if !strings.Contains(report, "| [22222222](#sql-22222222) | 3.00s | 7 | [bbbbbbbb](#current-plan-22222222-bbbbbbbb) | [bbbbbbbb](#new-plan-22222222-bbbbbbbb) | N/A |") {
+	if !strings.Contains(report, "| [22222222](#sql-22222222) | 3.00s | 7 | [bbbbbbbb](#current-plan-22222222-bbbbbbbb) | [bbbbbbbb](#new-plan-22222222-bbbbbbbb) | others |") {
 		t.Fatalf("changed plan or aggregated execution count missing: %s", report)
 	}
 	if !strings.Contains(report, "## SQL: 22222222") || strings.Contains(report, "## 22222222SELECT * FROM t WHERE id = 2") {
@@ -69,12 +69,84 @@ func TestComparerOnlyReportsChangedIDAndTask(t *testing.T) {
 }
 
 func TestPlanOperatorsSupportsWhitespacePlans(t *testing.T) {
-	operators, err := planOperators("id task estRows\n└─TableReader_1 root 1")
+	operators, err := parsePlan("id task estRows\n└─TableReader_1 root 1")
 	if err != nil {
-		t.Fatalf("planOperators returned error: %v", err)
+		t.Fatalf("parsePlan returned error: %v", err)
 	}
-	if len(operators) != 1 || operators[0].id != "└─TableReader" || operators[0].task != "root" {
+	if operators == nil || operators.Root == nil || operators.Root.Operator != "TableReader" || operators.Root.Task != "root" {
 		t.Fatalf("unexpected operators: %+v", operators)
+	}
+}
+
+func TestParsePlanCollectsReaderOperators(t *testing.T) {
+	plan, err := parsePlan("id\ttask\taccess object\n" +
+		"HashJoin_1\troot\t\n" +
+		"├─TableReader_2\troot\t\n" +
+		"│ └─TableFullScan_3\tcop[tikv]\ttable:t\n" +
+		"└─IndexReader_4\troot\t\n")
+	if err != nil {
+		t.Fatalf("parsePlan returned error: %v", err)
+	}
+	if len(plan.reader) != 2 {
+		t.Fatalf("got %d reader operators, want 2", len(plan.reader))
+	}
+	for i, want := range []string{"TableReader", "TableFullScan"} {
+		if plan.reader[i].Operator != want {
+			t.Fatalf("reader[%d] = %q, want %q", i, plan.reader[i].Operator, want)
+		}
+	}
+	if len(plan.indexReader) != 1 || plan.indexReader[0].Operator != "IndexReader" {
+		t.Fatalf("unexpected index readers: %+v", plan.indexReader)
+	}
+	if got := plan.reader[1].accessTable; got != "t" {
+		t.Fatalf("access table = %q, want %q", got, "t")
+	}
+}
+
+func TestPlanReadersEqualSortsNodeStringsAndIgnoresIDs(t *testing.T) {
+	left := &Plan{
+		reader: []*PlanNode{
+			{Operator: "TableReader", ID: 1, Task: "root", accessTable: "a"},
+			{Operator: "TableFullScan", ID: 2, Task: "tikv", accessTable: "b"},
+		},
+		indexReader: []*PlanNode{{Operator: "IndexReader", ID: 3, Task: "root", Index: "idx", accessTable: "a"}},
+	}
+	right := &Plan{
+		reader: []*PlanNode{
+			{Operator: "TableFullScan", ID: 20, Task: "tikv", accessTable: "b"},
+			{Operator: "TableReader", ID: 10, Task: "root", accessTable: "a"},
+		},
+		indexReader: []*PlanNode{{Operator: "IndexReader", ID: 30, Task: "root", Index: "idx", accessTable: "a"}},
+	}
+	if !planReadersEqual(left, right) {
+		t.Fatal("reader and indexReader collections with the same nodes should compare equal")
+	}
+	right.indexReader[0].accessTable = "b"
+	if planReadersEqual(left, right) {
+		t.Fatal("different access tables should make reader collections different")
+	}
+}
+
+func TestComparePlansReportsReaderChangeReasonBeforeNormalComparison(t *testing.T) {
+	oldPlan := &Plan{reader: []*PlanNode{{Operator: "TableReader", Task: "tiflash"}}}
+	newPlan := &Plan{reader: []*PlanNode{{Operator: "TableReader", Task: "tikv"}}}
+	equal, reason := comparePlans(oldPlan, newPlan)
+	if equal || reason != "tiflash->tikv" {
+		t.Fatalf("got equal=%v reason=%q, want false and tiflash->tikv", equal, reason)
+	}
+
+	oldPlan = &Plan{reader: []*PlanNode{{Operator: "TableFullScan", Task: "tikv"}}}
+	newPlan = &Plan{indexReader: []*PlanNode{{Operator: "IndexFullScan", Task: "tikv"}}}
+	equal, reason = comparePlans(oldPlan, newPlan)
+	if equal || reason != "tablefullscan->indexfullscan" {
+		t.Fatalf("got equal=%v reason=%q, want false and tablefullscan->indexfullscan", equal, reason)
+	}
+
+	oldPlan = &Plan{indexReader: []*PlanNode{{Operator: "IndexReader", Task: "tikv"}}}
+	newPlan = &Plan{indexReader: []*PlanNode{{Operator: "IndexReader", Task: "tiflash"}}}
+	equal, reason = comparePlans(oldPlan, newPlan)
+	if equal || reason != "tikv->tiflash" {
+		t.Fatalf("got equal=%v reason=%q, want false and tikv->tiflash", equal, reason)
 	}
 }
 
@@ -118,16 +190,5 @@ func TestComparerIgnoresOperatorNumbersAndSortsByExecTime(t *testing.T) {
 	bi, ci := strings.Index(report, "| [bbbbbbbb]"), strings.Index(report, "| [cccccccc]")
 	if bi < 0 || ci < 0 || ci > bi {
 		t.Fatal("must report task/name changes ordered by ExecTime, not ExecCount")
-	}
-}
-
-func TestOperatorNamePreservesNonNumericSuffix(t *testing.T) {
-	for input, want := range map[string]string{
-		"HashAgg_12": "HashAgg", "└─TableReader_14": "└─TableReader",
-		"Op_12_extra": "Op_12_extra", "Op_": "Op_", "Op": "Op",
-	} {
-		if got := operatorName(input); got != want {
-			t.Fatalf("%q: got %q, want %q", input, got, want)
-		}
 	}
 }

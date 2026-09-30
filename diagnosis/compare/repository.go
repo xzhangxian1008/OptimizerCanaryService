@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis/util"
@@ -129,11 +128,11 @@ func (r *SQLRepository) explainPlanDigest(ctx context.Context, conn *sql.Conn, s
 		return "", util.NewStackErrorf("query EXPLAIN plan digest: %w", err)
 	}
 	defer rows.Close()
-	newOperators, err := planOperators(newPlan)
+	newParsedPlan, err := parsePlan(newPlan)
 	if err != nil {
 		return "", fmt.Errorf("read EXPLAIN plan for digest lookup: %w", err)
 	}
-	newDigestOperators := digestLookupOperators(newOperators)
+	newDigestOperators := newParsedPlan
 	normalizedExplainSQL := normalizeExplainSQL(explainSQL)
 	for rows.Next() {
 		var querySample, digest, plan string
@@ -143,8 +142,8 @@ func (r *SQLRepository) explainPlanDigest(ctx context.Context, conn *sql.Conn, s
 		if normalizeExplainSQL(querySample) != normalizedExplainSQL {
 			continue
 		}
-		operators, err := planOperators(plan)
-		if err == nil && slices.Equal(newDigestOperators, digestLookupOperators(operators)) {
+		parsedPlan, err := parsePlan(plan)
+		if err == nil && plansEqual(newDigestOperators, parsedPlan) {
 			return digest, nil
 		}
 	}
