@@ -51,15 +51,16 @@ func TestComparerOnlyReportsChangedIDAndTask(t *testing.T) {
 	if strings.Contains(report, "11111111_aaaaaaaa") {
 		t.Fatalf("unchanged plan was included: %s", report)
 	}
-	if !strings.Contains(report, "| [22222222](#22222222_sql) | 7 | 3.000000000s | [bbbbbbbb](#22222222_bbbbbbbb_current_plan) | [bbbbbbbb](#22222222_bbbbbbbb_new_plan) | N/A |") {
+	if !strings.Contains(report, "| [22222222](#sql-22222222) | 7 | 3.00s | [bbbbbbbb](#current-plan-22222222-bbbbbbbb) | [bbbbbbbb](#new-plan-22222222-bbbbbbbb) | N/A |") {
 		t.Fatalf("changed plan or aggregated execution count missing: %s", report)
 	}
-	if !strings.Contains(report, "## 22222222_sql") || strings.Contains(report, "## 22222222SELECT * FROM t WHERE id = 2") {
+	if !strings.Contains(report, "## SQL: 22222222") || strings.Contains(report, "## 22222222SELECT * FROM t WHERE id = 2") {
 		t.Fatalf("SQL detail heading missing: %s", report)
 	}
-	if !strings.Contains(report, "### 22222222_bbbbbbbb_current_plan") ||
-		!strings.Contains(report, "### 22222222_bbbbbbbb_new_plan") ||
-		!strings.Contains(report, "### 22222222_bbbbbbbb_binding_info") {
+	if !strings.Contains(report, "### Current Plan: bbbbbbbb") ||
+		!strings.Contains(report, "### New Plan: bbbbbbbb") ||
+		!strings.Contains(report, "### Binding Stmt: 22222222_bbbbbbbb") ||
+		!strings.Contains(report, "CREATE GLOBAL BINDING FOR SELECT * FROM t WHERE id = 2 USING") {
 		t.Fatalf("detail headings missing: %s", report)
 	}
 }

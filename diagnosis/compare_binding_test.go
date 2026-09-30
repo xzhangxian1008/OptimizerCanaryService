@@ -30,25 +30,26 @@ func TestCurrentPlanBinding(t *testing.T) {
 func TestComparisonReportColumnsAndHierarchy(t *testing.T) {
 	sample := Sample{Schema: "test", SQL: "select 1"}
 	report := renderComparison([]comparedPlan{
-		{statement: StatementPlan{Sample: sample, SQLDigest: "aaaaaaaa1", PlanDigest: "11111111", ExecCount: 9, ExecTime: 1234567890}},
+		{statement: StatementPlan{Sample: sample, SQLDigest: "aaaaaaaa1", PlanDigest: "11111111", ExecCount: 9, ExecTime: 1234567890}, bindings: "select /*+ H() */ 1"},
 		{statement: StatementPlan{Sample: Sample{SQL: "select 2"}, SQLDigest: "bbbbbbbb2", PlanDigest: "22222222", ExecCount: 8}},
 		{statement: StatementPlan{Sample: sample, SQLDigest: "aaaaaaaa1", PlanDigest: "33333333", ExecCount: 7}},
 	})
 	for _, text := range []string{
-		"| ExecCount | ExecTime | Current Plan | New Plan | Plan Change | Binding of the Current Plan |",
-		"| 9 | 1.234567890s |",
-		"[bind info](#aaaaaaaa_11111111_binding_info)",
-		"### aaaaaaaa_11111111_current_plan",
-		"### aaaaaaaa_33333333_binding_info",
+		"| ExecCount | Total ExecTime | Current Plan | New Plan | Plan Change | Binding of the Current Plan |",
+		"| 9 | 1.23s |",
+		"[binding stmt](#binding-stmt-aaaaaaaa-11111111)",
+		"### Current Plan: 11111111",
+		"### Binding Stmt: aaaaaaaa_33333333",
+		"CREATE GLOBAL BINDING FOR",
 	} {
 		if !strings.Contains(report, text) {
 			t.Fatalf("missing %q in report", text)
 		}
 	}
-	if strings.Contains(report, "_old_plan") {
-		t.Fatal("old plan anchor remains")
+	if strings.Contains(report, "_old_plan") || strings.Contains(report, "_current_plan") {
+		t.Fatal("legacy plan title remains")
 	}
-	if strings.Index(report, "### aaaaaaaa_33333333_current_plan") > strings.Index(report, "## bbbbbbbb_sql") {
+	if strings.Index(report, "### Current Plan: 33333333") > strings.Index(report, "## SQL: bbbbbbbb") {
 		t.Fatal("plan detail placed under the wrong SQL heading")
 	}
 }

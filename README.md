@@ -50,18 +50,20 @@ SQL digest, current plan digest, and new plan digest are shortened to eight
 characters; the SQL digest links to the full SQL heading. Rows are sorted by
 total execution time (ExecTime) in descending order.
 
-The columns are SQL Digest, ExecCount, ExecTime, Current Plan, New Plan,
-Plan Change (currently blank), and Binding of the Current Plan. ExecTime sums
-SUM_LATENCY for each schema/SQL digest/plan digest group and displays seconds
-with nanosecond precision. Binding details contain the SQL with PLAN_HINT
+The columns are SQL Digest, ExecCount, Total ExecTime, Current Plan, New Plan,
+Plan Change (currently `N/A`), and Binding of the Current Plan. Total ExecTime
+sums SUM_LATENCY for each schema/SQL digest/plan digest group and displays
+seconds truncated to two decimal places. Binding details contain a directly
+executable `CREATE GLOBAL BINDING FOR ... USING ...;` statement with PLAN_HINT
 inserted as an optimizer hint after the main query's first SELECT, outside CTE
 definitions and before subsequent UNION branches. An existing hint immediately
 after that SELECT is replaced. Empty PLAN_HINT values are shown as unavailable.
 This report does not create bindings in TiDB.
 
-SQL details use level-two headings; current plan, new plan, and binding details
-use level-three headings grouped under their SQL. Current plan headings and
-anchors end in _current_plan.
+SQL details use headings such as `SQL: d8061f40`; current plan, new plan, and
+binding details use level-three headings such as `Current Plan: 3880073a`,
+`New Plan: f09e0c09`, and `Binding Stmt: d8061f40_3880073a`, grouped under
+their SQL.
 
 ```bash
 curl -sS -OJ http://127.0.0.1:8080/compare

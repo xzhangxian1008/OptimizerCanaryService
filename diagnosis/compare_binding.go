@@ -6,7 +6,17 @@ import (
 )
 
 func formatExecTime(ns uint64) string {
-	return fmt.Sprintf("%d.%09ds", ns/1_000_000_000, ns%1_000_000_000)
+	// Truncate rather than round to two decimal places.
+	return fmt.Sprintf("%d.%02ds", ns/1_000_000_000, (ns%1_000_000_000)/10_000_000)
+}
+
+func bindingStatement(originSQL, hintedSQL string) string {
+	originSQL = strings.TrimSuffix(strings.TrimSpace(originSQL), ";")
+	hintedSQL = strings.TrimSuffix(strings.TrimSpace(hintedSQL), ";")
+	if hintedSQL == "" {
+		return ""
+	}
+	return fmt.Sprintf("CREATE GLOBAL BINDING FOR %s USING %s;", originSQL, hintedSQL)
 }
 
 // currentPlanBinding generates report text only; it never installs a binding.

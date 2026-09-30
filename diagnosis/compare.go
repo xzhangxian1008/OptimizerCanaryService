@@ -198,7 +198,7 @@ func aggregateStatementPlans(statements []StatementPlan) []StatementPlan {
 func renderComparison(plans []comparedPlan) string {
 	var report strings.Builder
 	report.WriteString("# SQL Plan Comparison\n\n")
-	report.WriteString("| SQL Digest | ExecCount | ExecTime | Current Plan | New Plan | Plan Change | Binding of the Current Plan |\n")
+	report.WriteString("| SQL Digest | ExecCount | Total ExecTime | Current Plan | New Plan | Plan Change | Binding of the Current Plan |\n")
 	report.WriteString("| --- | ---: | ---: | --- | --- | --- | --- |\n")
 	anchors := make(map[string]int)
 	type sqlDetailKey struct {
@@ -219,8 +219,8 @@ func renderComparison(plans []comparedPlan) string {
 			details = &strings.Builder{}
 			detailGroups[sqlKey] = details
 			detailOrder = append(detailOrder, sqlKey)
-			title := sqlDigestPrefix + "_sql"
-			sqlAnchor = uniqueHeadingAnchor(title, anchors)
+			title := "SQL: " + sqlDigestPrefix
+			sqlAnchor = uniqueHeadingAnchor("sql-"+sqlDigestPrefix, anchors)
 			sqlAnchors[sqlKey] = sqlAnchor
 			fmt.Fprintf(details, "\n<a id=\"%s\"></a>\n\n## %s\n\n", html.EscapeString(sqlAnchor), title)
 			fmt.Fprintf(details, "Schema: %s  \nSQL Digest: %s\n\n",
@@ -228,21 +228,28 @@ func renderComparison(plans []comparedPlan) string {
 			writeCodeBlock(details, statement.SQL)
 		}
 
-		currentTitle := sqlDigestPrefix + "_" + firstEight(statement.PlanDigest) + "_current_plan"
-		newTitle := sqlDigestPrefix + "_" + firstEight(plan.newPlanDigest) + "_new_plan"
-		bindingTitle := sqlDigestPrefix + "_" + firstEight(statement.PlanDigest) + "_binding_info"
-		currentAnchor := writeDetail(details, currentTitle, statement, statement.PlanDigest, withoutPlanColumns(statement.Plan, "actRows", "execution info", "memory", "disk"), anchors)
-		newAnchor := writeDetail(details, newTitle, statement, plan.newPlanDigest, plan.newPlan, anchors)
+		currentPlanPrefix := firstEight(statement.PlanDigest)
+		newPlanPrefix := firstEight(plan.newPlanDigest)
+		currentTitle := "Current Plan: " + currentPlanPrefix
+		newTitle := "New Plan: " + newPlanPrefix
+		bindingTitle := "Binding Stmt: " + sqlDigestPrefix + "_" + currentPlanPrefix
+		currentAnchor := uniqueHeadingAnchor("current-plan-"+sqlDigestPrefix+"-"+currentPlanPrefix, anchors)
+		newAnchor := uniqueHeadingAnchor("new-plan-"+sqlDigestPrefix+"-"+newPlanPrefix, anchors)
+		bindingAnchor := uniqueHeadingAnchor("binding-stmt-"+sqlDigestPrefix+"-"+currentPlanPrefix, anchors)
+		currentAnchor = writeDetailWithAnchor(details, currentAnchor, currentTitle, statement, statement.PlanDigest, withoutPlanColumns(statement.Plan, "actRows", "execution info", "memory", "disk"))
+		newAnchor = writeDetailWithAnchor(details, newAnchor, newTitle, statement, plan.newPlanDigest, plan.newPlan)
 		bindingText := plan.bindings
 		if bindingText == "" {
 			bindingText = "No PLAN_HINT available."
+		} else {
+			bindingText = bindingStatement(statement.SQL, bindingText)
 		}
-		bindingAnchor := writeDetail(details, bindingTitle, statement, statement.PlanDigest, bindingText, anchors)
+		bindingAnchor = writeDetailWithAnchor(details, bindingAnchor, bindingTitle, statement, statement.PlanDigest, bindingText)
 		fmt.Fprintf(&report, "| [%s](#%s) | %d | %s | [%s](#%s) | [%s](#%s) | N/A | [%s](#%s) |\n",
 			markdownCell(sqlDigestPrefix), sqlAnchor, statement.ExecCount, formatExecTime(statement.ExecTime),
 			markdownCell(firstEight(statement.PlanDigest)), currentAnchor,
 			markdownCell(firstEight(plan.newPlanDigest)), newAnchor,
-			markdownCell("bind info"), bindingAnchor)
+			markdownCell("binding stmt"), bindingAnchor)
 	}
 	if len(plans) == 0 {
 		report.WriteString("\nNo plan differences found.\n")
@@ -264,6 +271,10 @@ func uniqueHeadingAnchor(title string, anchors map[string]int) string {
 
 func writeDetail(details *strings.Builder, title string, statement StatementPlan, planDigest, content string, anchors map[string]int) string {
 	anchor := uniqueHeadingAnchor(title, anchors)
+	return writeDetailWithAnchor(details, anchor, title, statement, planDigest, content)
+}
+
+func writeDetailWithAnchor(details *strings.Builder, anchor, title string, statement StatementPlan, planDigest, content string) string {
 	fmt.Fprintf(details, "\n<a id=\"%s\"></a>\n\n### %s\n\n", html.EscapeString(anchor), title)
 	fmt.Fprintf(details, "Schema: %s  \nSQL Digest: %s  \nPlan Digest: %s\n\n",
 		markdownCell(statement.Schema), markdownCell(statement.SQLDigest), markdownCell(planDigest))
