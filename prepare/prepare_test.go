@@ -43,7 +43,7 @@ func TestTPCCWorkloadsUseSessionBindingMarkers(t *testing.T) {
 	markers := make(map[string]struct{}, len(tpccWorkloads))
 	weights := make(map[int]struct{}, len(tpccWorkloads))
 	for _, workload := range tpccWorkloads {
-		if workload.name == "" || workload.marker == "" || workload.sql == "" || workload.boundSQL == "" || workload.bindingHint == "" || workload.weight == 0 {
+		if workload.name == "" || workload.marker == "" || workload.sql == "" || workload.boundSQL == "" || workload.bindingHint == "" || len(workload.tables) == 0 || workload.weight == 0 {
 			t.Fatalf("incomplete workload: %+v", workload)
 		}
 		if workload.weight < 1 || workload.weight > 100 {
@@ -88,6 +88,12 @@ func TestTPCCWorkloadBindingHintGeneration(t *testing.T) {
 	tiFlash := newTPCCWorkloadWithHint("tiflash_test", statement, tpccBindingHintTiFlash, "c", "d")
 	if !strings.Contains(tiFlash.boundSQL, "/*+ READ_FROM_STORAGE(TIFLASH[c, d]) */") {
 		t.Fatalf("unexpected TiFlash binding SQL: %s", tiFlash.boundSQL)
+	}
+	if got, want := alternateTPCCBindingHint(tpccBindingHintUseIndex), tpccBindingHintTiFlash; got != want {
+		t.Fatalf("alternate USE_INDEX hint = %q, want %q", got, want)
+	}
+	if got, want := alternateTPCCBindingHint(tpccBindingHintTiFlash), tpccBindingHintUseIndex; got != want {
+		t.Fatalf("alternate TiFlash hint = %q, want %q", got, want)
 	}
 }
 

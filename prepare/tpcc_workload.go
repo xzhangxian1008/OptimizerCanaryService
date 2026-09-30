@@ -14,6 +14,7 @@ type tpccWorkload struct {
 	boundSQL    string
 	marker      string
 	bindingHint tpccBindingHint
+	tables      []string
 	weight      int
 }
 

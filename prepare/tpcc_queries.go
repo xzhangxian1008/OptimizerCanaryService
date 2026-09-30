@@ -321,6 +321,18 @@ func newTPCCWorkloadWithHint(name, statement string, hint tpccBindingHint, table
 	}
 	marker := "optimizer_canary_tpcc:" + name
 	tail := statement[len(selectKeyword):]
+	originalSQL := selectKeyword + " /* " + marker + " */" + tail
+	return tpccWorkload{
+		name:        name,
+		marker:      marker,
+		sql:         originalSQL,
+		boundSQL:    buildTPCCBoundSQL(originalSQL, hint, tables),
+		bindingHint: hint,
+		tables:      append([]string(nil), tables...),
+	}
+}
+
+func buildTPCCBoundSQL(statement string, hint tpccBindingHint, tables []string) string {
 	var optimizerHint string
 	switch hint {
 	case tpccBindingHintUseIndex:
@@ -332,13 +344,19 @@ func newTPCCWorkloadWithHint(name, statement string, hint tpccBindingHint, table
 	case tpccBindingHintTiFlash:
 		optimizerHint = "READ_FROM_STORAGE(TIFLASH[" + strings.Join(tables, ", ") + "])"
 	default:
-		panic(fmt.Sprintf("TPC-C workload %q has unsupported binding hint %q", name, hint))
+		panic(fmt.Sprintf("unsupported TPC-C binding hint %q", hint))
 	}
-	return tpccWorkload{
-		name:        name,
-		marker:      marker,
-		sql:         selectKeyword + " /* " + marker + " */" + tail,
-		boundSQL:    selectKeyword + " /*+ " + optimizerHint + " */ /* " + marker + " */" + tail,
-		bindingHint: hint,
+	const selectKeyword = "SELECT"
+	return selectKeyword + " /*+ " + optimizerHint + " */" + statement[len(selectKeyword):]
+}
+
+func alternateTPCCBindingHint(hint tpccBindingHint) tpccBindingHint {
+	switch hint {
+	case tpccBindingHintUseIndex:
+		return tpccBindingHintTiFlash
+	case tpccBindingHintTiFlash:
+		return tpccBindingHintUseIndex
+	default:
+		panic(fmt.Sprintf("unsupported TPC-C binding hint %q", hint))
 	}
 }

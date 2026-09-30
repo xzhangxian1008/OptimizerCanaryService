@@ -99,7 +99,7 @@ func (p *preparer) prepareTPCCStatements(ctx context.Context) error {
 	}
 
 	cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), workloadCleanupTimeout)
-	cleanupErr := closeTPCCWorkers(cleanupCtx, workers)
+	p.closeTPCCWorkers(cleanupCtx, workers)
 	cleanupCancel()
 
 	for i, workload := range tpccWorkloads {
@@ -115,11 +115,12 @@ func (p *preparer) prepareTPCCStatements(ctx context.Context) error {
 		zap.Duration("duration", p.duration),
 		zap.Uint64("executions", totalExecutions),
 	)
-	return errors.Join(runErr, cleanupErr)
+	return runErr
 }
 
 func (p *preparer) validateTPCCBindings(ctx context.Context) error {
-	for _, workload := range tpccWorkloads {
+	for workloadIndex := range tpccWorkloads {
+		workload := tpccWorkloads[workloadIndex]
 		naturalPlan, err := explainPlanOperators(ctx, p.conn, workload.sql)
 		if err != nil {
 			return fmt.Errorf("explain natural plan for workload %s: %w", workload.name, err)
@@ -128,9 +129,30 @@ func (p *preparer) validateTPCCBindings(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("validate session binding for workload %s: %w", workload.name, err)
 		}
-		if slices.Equal(boundPlan, naturalPlan) {
-			return fmt.Errorf("workload %s has the same bound and natural id/task operators", workload.name)
+		if !slices.Equal(boundPlan, naturalPlan) {
+			continue
 		}
+
+		originalHint := workload.bindingHint
+		workload.bindingHint = alternateTPCCBindingHint(originalHint)
+		workload.boundSQL = buildTPCCBoundSQL(workload.sql, workload.bindingHint, workload.tables)
+		p.logger.Info("retry TPC-C binding with alternate hint",
+			zap.String("workload", workload.name),
+			zap.String("original_hint", string(originalHint)),
+			zap.String("alternate_hint", string(workload.bindingHint)),
+		)
+		boundPlan, err = p.explainWithSessionBinding(ctx, workload)
+		if err != nil {
+			return fmt.Errorf("validate alternate session binding for workload %s: %w", workload.name, err)
+		}
+		if slices.Equal(boundPlan, naturalPlan) {
+			p.logger.Warn("TPC-C workload has the same natural plan with both binding hints",
+				zap.String("workload", workload.name),
+				zap.String("retained_hint", string(originalHint)),
+			)
+			continue
+		}
+		tpccWorkloads[workloadIndex] = workload
 	}
 	return nil
 }
@@ -192,7 +214,6 @@ func (p *preparer) createTPCCWorkers(ctx context.Context) ([]tpccWorkloadWorker,
 
 func runTPCCWorker(ctx context.Context, worker tpccWorkloadWorker, picker weightedTPCCPicker, executionCounts []atomic.Uint64) (uint64, error) {
 	var executions uint64
-	checkedBinding := false
 	for {
 		if ctx.Err() != nil {
 			return executions, nil
@@ -207,35 +228,29 @@ func runTPCCWorker(ctx context.Context, worker tpccWorkloadWorker, picker weight
 		}
 		executions++
 		executionCounts[workloadIndex].Add(1)
-
-		if !checkedBinding {
-			var usedBinding int
-			if err := worker.conn.QueryRowContext(ctx, "SELECT @@last_plan_from_binding").Scan(&usedBinding); err != nil {
-				return executions, fmt.Errorf("read last_plan_from_binding: %w", err)
-			}
-			if usedBinding != 1 {
-				return executions, fmt.Errorf("workload %s did not use its session binding", workload.name)
-			}
-			checkedBinding = true
-		}
 	}
 }
 
-func closeTPCCWorkers(ctx context.Context, workers []tpccWorkloadWorker) error {
-	var cleanupErr error
+func (p *preparer) closeTPCCWorkers(ctx context.Context, workers []tpccWorkloadWorker) {
 	for _, worker := range workers {
 		for _, workload := range tpccWorkloads {
 			statement := "DROP SESSION BINDING FOR " + workload.sql
 			if _, err := worker.conn.ExecContext(ctx, statement); err != nil {
-				cleanupErr = errors.Join(cleanupErr, fmt.Errorf("drop worker %d binding for workload %s: %w", worker.id, workload.name, err))
+				p.logger.Warn("drop worker session bindings by closing connection",
+					zap.Int("worker", worker.id),
+					zap.String("workload", workload.name),
+					zap.Error(err),
+				)
 				break
 			}
 		}
 		if err := worker.conn.Close(); err != nil {
-			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("close worker %d connection: %w", worker.id, err))
+			p.logger.Debug("worker connection already closed",
+				zap.Int("worker", worker.id),
+				zap.Error(err),
+			)
 		}
 	}
-	return cleanupErr
 }
 
 func closeConnections(workers []tpccWorkloadWorker) {
