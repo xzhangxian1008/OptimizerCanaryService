@@ -201,7 +201,7 @@ func aggregateSqlInfos(sqlInfos []SQLInfo) []SQLInfo {
 func renderComparison(plans []comparedPlan) string {
 	var report strings.Builder
 	report.WriteString("# SQL Plan Comparison\n\n")
-	report.WriteString("| SQL Digest | ExecCount | Total ExecTime | Current Plan | New Plan | Plan Change | Binding of the Current Plan |\n")
+	report.WriteString("| SQL Digest | Total ExecTime | ExecCount | Current Plan | New Plan | Plan Change | Binding of the Current Plan |\n")
 	report.WriteString("| --- | ---: | ---: | --- | --- | --- | --- |\n")
 	anchors := make(map[string]int)
 	type sqlDetailKey struct {
@@ -248,8 +248,8 @@ func renderComparison(plans []comparedPlan) string {
 			bindingText = bindingStatement(statement.SQL, bindingText)
 		}
 		bindingAnchor = writeDetailWithAnchor(details, bindingAnchor, bindingTitle, statement, statement.PlanDigest, bindingText)
-		fmt.Fprintf(&report, "| [%s](#%s) | %d | %s | [%s](#%s) | [%s](#%s) | N/A | [%s](#%s) |\n",
-			markdownCell(sqlDigestPrefix), sqlAnchor, statement.ExecCount, formatExecTime(statement.ExecTime),
+		fmt.Fprintf(&report, "| [%s](#%s) | %s | %d | [%s](#%s) | [%s](#%s) | N/A | [%s](#%s) |\n",
+			markdownCell(sqlDigestPrefix), sqlAnchor, formatExecTime(statement.ExecTime), statement.ExecCount,
 			markdownCell(firstEight(statement.PlanDigest)), currentAnchor,
 			markdownCell(firstEight(plan.newPlanDigest)), newAnchor,
 			markdownCell("binding stmt"), bindingAnchor)

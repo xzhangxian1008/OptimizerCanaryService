@@ -51,7 +51,7 @@ func TestComparerOnlyReportsChangedIDAndTask(t *testing.T) {
 	if strings.Contains(report, "11111111_aaaaaaaa") {
 		t.Fatalf("unchanged plan was included: %s", report)
 	}
-	if !strings.Contains(report, "| [22222222](#sql-22222222) | 7 | 3.00s | [bbbbbbbb](#current-plan-22222222-bbbbbbbb) | [bbbbbbbb](#new-plan-22222222-bbbbbbbb) | N/A |") {
+	if !strings.Contains(report, "| [22222222](#sql-22222222) | 3.00s | 7 | [bbbbbbbb](#current-plan-22222222-bbbbbbbb) | [bbbbbbbb](#new-plan-22222222-bbbbbbbb) | N/A |") {
 		t.Fatalf("changed plan or aggregated execution count missing: %s", report)
 	}
 	if !strings.Contains(report, "## SQL: 22222222") || strings.Contains(report, "## 22222222SELECT * FROM t WHERE id = 2") {

@@ -1,32 +1,32 @@
 # SQL Plan Comparison
 
-| SQL Digest | ExecCount | Total ExecTime | Current Plan | New Plan | Plan Change | Binding of the Current Plan |
+| SQL Digest | Total ExecTime | ExecCount | Current Plan | New Plan | Plan Change | Binding of the Current Plan |
 | --- | ---: | ---: | --- | --- | --- | --- |
-| [5a59161f](#sql-5a59161f) | 1244 | 13.34s | [25da9ba3](#current-plan-5a59161f-25da9ba3) | [3599a539](#new-plan-5a59161f-3599a539) | Join Order Change | [binding stmt](#binding-stmt-5a59161f-25da9ba3) |
-| [508af7b7](#sql-508af7b7) | 1285 | 13.25s | [81239958](#current-plan-508af7b7-81239958) | [81b8fd42](#new-plan-508af7b7-81b8fd42) | TiKV->TiFlash | [binding stmt](#binding-stmt-508af7b7-81239958) |
-| [7ae3853d](#sql-7ae3853d) | 1051 | 11.45s | [7a3d4314](#current-plan-7ae3853d-7a3d4314) | [95cca885](#new-plan-7ae3853d-95cca885) | Index Change | [binding stmt](#binding-stmt-7ae3853d-7a3d4314) |
-| [b595cdf2](#sql-b595cdf2) | 1290 | 10.78s | [aa021341](#current-plan-b595cdf2-aa021341) | [dd6eb16c](#new-plan-b595cdf2-dd6eb16c) | TiFlash->TiKV | [binding stmt](#binding-stmt-b595cdf2-aa021341) |
-| [71aa781a](#sql-71aa781a) | 1049 | 9.40s | [3408b6ab](#current-plan-71aa781a-3408b6ab) | [78828f61](#new-plan-71aa781a-78828f61) | Others | [binding stmt](#binding-stmt-71aa781a-3408b6ab) |
-| [5f700e0f](#sql-5f700e0f) | 863 | 8.80s | [5684c867](#current-plan-5f700e0f-5684c867) | [1ca7919d](#new-plan-5f700e0f-1ca7919d) | TiKV->TiFlash | [binding stmt](#binding-stmt-5f700e0f-5684c867) |
-| [435ba825](#sql-435ba825) | 710 | 6.05s | [7d89739d](#current-plan-435ba825-7d89739d) | [02e1284d](#new-plan-435ba825-02e1284d) | Index Change | [binding stmt](#binding-stmt-435ba825-7d89739d) |
-| [169b16a2](#sql-169b16a2) | 429 | 4.71s | [72b00515](#current-plan-169b16a2-72b00515) | [d99b28d7](#new-plan-169b16a2-d99b28d7) | Others | [binding stmt](#binding-stmt-169b16a2-72b00515) |
-| [c874ca57](#sql-c874ca57) | 649 | 4.64s | [1e80b8c4](#current-plan-c874ca57-1e80b8c4) | [04539a74](#new-plan-c874ca57-04539a74) | TiFlash->TiKV | [binding stmt](#binding-stmt-c874ca57-1e80b8c4) |
-| [c39285d1](#sql-c39285d1) | 568 | 4.51s | [4c1ca90b](#current-plan-c39285d1-4c1ca90b) | [f166f97a](#new-plan-c39285d1-f166f97a) | Join Order Change | [binding stmt](#binding-stmt-c39285d1-4c1ca90b) |
-| [48a60462](#sql-48a60462) | 662 | 4.47s | [90abfd62](#current-plan-48a60462-90abfd62) | [dde0625c](#new-plan-48a60462-dde0625c) | TiKV->TiFlash | [binding stmt](#binding-stmt-48a60462-90abfd62) |
-| [b2193e67](#sql-b2193e67) | 529 | 3.77s | [f7a22f73](#current-plan-b2193e67-f7a22f73) | [d6deb9ad](#new-plan-b2193e67-d6deb9ad) | Others | [binding stmt](#binding-stmt-b2193e67-f7a22f73) |
-| [1e8079bc](#sql-1e8079bc) | 332 | 3.03s | [7e2639e9](#current-plan-1e8079bc-7e2639e9) | [54ed9ed5](#new-plan-1e8079bc-54ed9ed5) | Index Change | [binding stmt](#binding-stmt-1e8079bc-7e2639e9) |
-| [bc78a1ac](#sql-bc78a1ac) | 1387 | 1.95s | [8eae982c](#current-plan-bc78a1ac-8eae982c) | [8eae982c](#new-plan-bc78a1ac-8eae982c) | Join Order Change | [binding stmt](#binding-stmt-bc78a1ac-8eae982c) |
-| [c76e06dd](#sql-c76e06dd) | 260 | 1.80s | [7d6aacd0](#current-plan-c76e06dd-7d6aacd0) | [e97e832b](#new-plan-c76e06dd-e97e832b) | TiFlash->TiKV | [binding stmt](#binding-stmt-c76e06dd-7d6aacd0) |
-| [49fc955d](#sql-49fc955d) | 1271 | 1.69s | [b612e9ab](#current-plan-49fc955d-b612e9ab) | [b612e9ab](#new-plan-49fc955d-b612e9ab) | Others | [binding stmt](#binding-stmt-49fc955d-b612e9ab) |
-| [52772a82](#sql-52772a82) | 1256 | 1.63s | [5b116e13](#current-plan-52772a82-5b116e13) | [5b116e13](#new-plan-52772a82-5b116e13) | Join Order Change | [binding stmt](#binding-stmt-52772a82-5b116e13) |
-| [3053011a](#sql-3053011a) | 163 | 1.54s | [ff7a44a1](#current-plan-3053011a-ff7a44a1) | [72d6501b](#new-plan-3053011a-72d6501b) | Index Change | [binding stmt](#binding-stmt-3053011a-ff7a44a1) |
-| [44ab0ff9](#sql-44ab0ff9) | 1180 | 1.49s | [1e6e8634](#current-plan-44ab0ff9-1e6e8634) | [2e2d3a08](#new-plan-44ab0ff9-2e2d3a08) | TiKV->TiFlash | [binding stmt](#binding-stmt-44ab0ff9-1e6e8634) |
-| [2be26e27](#sql-2be26e27) | 781 | 1.29s | [769bb3f9](#current-plan-2be26e27-769bb3f9) | [769bb3f9](#new-plan-2be26e27-769bb3f9) | Others | [binding stmt](#binding-stmt-2be26e27-769bb3f9) |
-| [14d8bcdf](#sql-14d8bcdf) | 613 | 0.94s | [99616e47](#current-plan-14d8bcdf-99616e47) | [08478e33](#new-plan-14d8bcdf-08478e33) | TiFlash->TiKV | [binding stmt](#binding-stmt-14d8bcdf-99616e47) |
-| [39601b01](#sql-39601b01) | 562 | 0.74s | [b965db72](#current-plan-39601b01-b965db72) | [b965db72](#new-plan-39601b01-b965db72) | Join Order Change | [binding stmt](#binding-stmt-39601b01-b965db72) |
-| [1427f837](#sql-1427f837) | 148 | 0.64s | [425fc44d](#current-plan-1427f837-425fc44d) | [7c016980](#new-plan-1427f837-7c016980) | Index Change | [binding stmt](#binding-stmt-1427f837-425fc44d) |
-| [10818e2a](#sql-10818e2a) | 299 | 0.61s | [737a0989](#current-plan-10818e2a-737a0989) | [1f11d658](#new-plan-10818e2a-1f11d658) | TiKV->TiFlash | [binding stmt](#binding-stmt-10818e2a-737a0989) |
-| [747de7b8](#sql-747de7b8) | 92 | 0.44s | [fe087e4e](#current-plan-747de7b8-fe087e4e) | [9bf0da55](#new-plan-747de7b8-9bf0da55) | TiFlash->TiKV | [binding stmt](#binding-stmt-747de7b8-fe087e4e) |
+| [5a59161f](#sql-5a59161f) | 13.34s | 1244 | [25da9ba3](#current-plan-5a59161f-25da9ba3) | [3599a539](#new-plan-5a59161f-3599a539) | Join Order Change | [binding stmt](#binding-stmt-5a59161f-25da9ba3) |
+| [508af7b7](#sql-508af7b7) | 13.25s | 1285 | [81239958](#current-plan-508af7b7-81239958) | [81b8fd42](#new-plan-508af7b7-81b8fd42) | TiKV->TiFlash | [binding stmt](#binding-stmt-508af7b7-81239958) |
+| [7ae3853d](#sql-7ae3853d) | 11.45s | 1051 | [7a3d4314](#current-plan-7ae3853d-7a3d4314) | [95cca885](#new-plan-7ae3853d-95cca885) | Index Change | [binding stmt](#binding-stmt-7ae3853d-7a3d4314) |
+| [b595cdf2](#sql-b595cdf2) | 10.78s | 1290 | [aa021341](#current-plan-b595cdf2-aa021341) | [dd6eb16c](#new-plan-b595cdf2-dd6eb16c) | TiFlash->TiKV | [binding stmt](#binding-stmt-b595cdf2-aa021341) |
+| [71aa781a](#sql-71aa781a) | 9.40s | 1049 | [3408b6ab](#current-plan-71aa781a-3408b6ab) | [78828f61](#new-plan-71aa781a-78828f61) | Others | [binding stmt](#binding-stmt-71aa781a-3408b6ab) |
+| [5f700e0f](#sql-5f700e0f) | 8.80s | 863 | [5684c867](#current-plan-5f700e0f-5684c867) | [1ca7919d](#new-plan-5f700e0f-1ca7919d) | TiKV->TiFlash | [binding stmt](#binding-stmt-5f700e0f-5684c867) |
+| [435ba825](#sql-435ba825) | 6.05s | 710 | [7d89739d](#current-plan-435ba825-7d89739d) | [02e1284d](#new-plan-435ba825-02e1284d) | Index Change | [binding stmt](#binding-stmt-435ba825-7d89739d) |
+| [169b16a2](#sql-169b16a2) | 4.71s | 429 | [72b00515](#current-plan-169b16a2-72b00515) | [d99b28d7](#new-plan-169b16a2-d99b28d7) | Others | [binding stmt](#binding-stmt-169b16a2-72b00515) |
+| [c874ca57](#sql-c874ca57) | 4.64s | 649 | [1e80b8c4](#current-plan-c874ca57-1e80b8c4) | [04539a74](#new-plan-c874ca57-04539a74) | TiFlash->TiKV | [binding stmt](#binding-stmt-c874ca57-1e80b8c4) |
+| [c39285d1](#sql-c39285d1) | 4.51s | 568 | [4c1ca90b](#current-plan-c39285d1-4c1ca90b) | [f166f97a](#new-plan-c39285d1-f166f97a) | Join Order Change | [binding stmt](#binding-stmt-c39285d1-4c1ca90b) |
+| [48a60462](#sql-48a60462) | 4.47s | 662 | [90abfd62](#current-plan-48a60462-90abfd62) | [dde0625c](#new-plan-48a60462-dde0625c) | TiKV->TiFlash | [binding stmt](#binding-stmt-48a60462-90abfd62) |
+| [b2193e67](#sql-b2193e67) | 3.77s | 529 | [f7a22f73](#current-plan-b2193e67-f7a22f73) | [d6deb9ad](#new-plan-b2193e67-d6deb9ad) | Others | [binding stmt](#binding-stmt-b2193e67-f7a22f73) |
+| [1e8079bc](#sql-1e8079bc) | 3.03s | 332 | [7e2639e9](#current-plan-1e8079bc-7e2639e9) | [54ed9ed5](#new-plan-1e8079bc-54ed9ed5) | Index Change | [binding stmt](#binding-stmt-1e8079bc-7e2639e9) |
+| [bc78a1ac](#sql-bc78a1ac) | 1.95s | 1387 | [8eae982c](#current-plan-bc78a1ac-8eae982c) | [8eae982c](#new-plan-bc78a1ac-8eae982c) | Join Order Change | [binding stmt](#binding-stmt-bc78a1ac-8eae982c) |
+| [c76e06dd](#sql-c76e06dd) | 1.80s | 260 | [7d6aacd0](#current-plan-c76e06dd-7d6aacd0) | [e97e832b](#new-plan-c76e06dd-e97e832b) | TiFlash->TiKV | [binding stmt](#binding-stmt-c76e06dd-7d6aacd0) |
+| [49fc955d](#sql-49fc955d) | 1.69s | 1271 | [b612e9ab](#current-plan-49fc955d-b612e9ab) | [b612e9ab](#new-plan-49fc955d-b612e9ab) | Others | [binding stmt](#binding-stmt-49fc955d-b612e9ab) |
+| [52772a82](#sql-52772a82) | 1.63s | 1256 | [5b116e13](#current-plan-52772a82-5b116e13) | [5b116e13](#new-plan-52772a82-5b116e13) | Join Order Change | [binding stmt](#binding-stmt-52772a82-5b116e13) |
+| [3053011a](#sql-3053011a) | 1.54s | 163 | [ff7a44a1](#current-plan-3053011a-ff7a44a1) | [72d6501b](#new-plan-3053011a-72d6501b) | Index Change | [binding stmt](#binding-stmt-3053011a-ff7a44a1) |
+| [44ab0ff9](#sql-44ab0ff9) | 1.49s | 1180 | [1e6e8634](#current-plan-44ab0ff9-1e6e8634) | [2e2d3a08](#new-plan-44ab0ff9-2e2d3a08) | TiKV->TiFlash | [binding stmt](#binding-stmt-44ab0ff9-1e6e8634) |
+| [2be26e27](#sql-2be26e27) | 1.29s | 781 | [769bb3f9](#current-plan-2be26e27-769bb3f9) | [769bb3f9](#new-plan-2be26e27-769bb3f9) | Others | [binding stmt](#binding-stmt-2be26e27-769bb3f9) |
+| [14d8bcdf](#sql-14d8bcdf) | 0.94s | 613 | [99616e47](#current-plan-14d8bcdf-99616e47) | [08478e33](#new-plan-14d8bcdf-08478e33) | TiFlash->TiKV | [binding stmt](#binding-stmt-14d8bcdf-99616e47) |
+| [39601b01](#sql-39601b01) | 0.74s | 562 | [b965db72](#current-plan-39601b01-b965db72) | [b965db72](#new-plan-39601b01-b965db72) | Join Order Change | [binding stmt](#binding-stmt-39601b01-b965db72) |
+| [1427f837](#sql-1427f837) | 0.64s | 148 | [425fc44d](#current-plan-1427f837-425fc44d) | [7c016980](#new-plan-1427f837-7c016980) | Index Change | [binding stmt](#binding-stmt-1427f837-425fc44d) |
+| [10818e2a](#sql-10818e2a) | 0.61s | 299 | [737a0989](#current-plan-10818e2a-737a0989) | [1f11d658](#new-plan-10818e2a-1f11d658) | TiKV->TiFlash | [binding stmt](#binding-stmt-10818e2a-737a0989) |
+| [747de7b8](#sql-747de7b8) | 0.44s | 92 | [fe087e4e](#current-plan-747de7b8-fe087e4e) | [9bf0da55](#new-plan-747de7b8-9bf0da55) | TiFlash->TiKV | [binding stmt](#binding-stmt-747de7b8-fe087e4e) |
 
 <a id="sql-5a59161f"></a>
 

@@ -35,8 +35,8 @@ func TestComparisonReportColumnsAndHierarchy(t *testing.T) {
 		{statement: SQLInfo{Sample: sample, SQLDigest: "aaaaaaaa1", PlanDigest: "33333333", ExecCount: 7}},
 	})
 	for _, text := range []string{
-		"| ExecCount | Total ExecTime | Current Plan | New Plan | Plan Change | Binding of the Current Plan |",
-		"| 9 | 1.23s |",
+		"| Total ExecTime | ExecCount | Current Plan | New Plan | Plan Change | Binding of the Current Plan |",
+		"| 1.23s | 9 |",
 		"[binding stmt](#binding-stmt-aaaaaaaa-11111111)",
 		"### Current Plan: 11111111",
 		"### Binding Stmt: aaaaaaaa_33333333",
