@@ -1,8 +1,10 @@
-package diagnosis
+package compare
 
 import (
 	"fmt"
 	"strings"
+
+	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis/util"
 )
 
 func formatExecTime(ns uint64) string {
@@ -28,7 +30,7 @@ func currentPlanBinding(sqlText, hint string) (string, error) {
 		return "", nil
 	}
 	if strings.Contains(hint, "*/") {
-		return "", newStackErrorf("PLAN_HINT contains a comment terminator")
+		return "", util.NewStackErrorf("PLAN_HINT contains a comment terminator")
 	}
 	depth, bestDepth, selectEnd := 0, int(^uint(0)>>1), -1
 	for i := 0; i < len(sqlText); {
@@ -54,7 +56,7 @@ func currentPlanBinding(sqlText, hint string) (string, error) {
 				}
 			}
 			if !closed {
-				return "", newStackErrorf("unterminated quoted token in binding SQL")
+				return "", util.NewStackErrorf("unterminated quoted token in binding SQL")
 			}
 		case c == '#' || (c == '-' && i+2 < len(sqlText) && sqlText[i+1] == '-' && sqlText[i+2] <= ' '):
 			for i < len(sqlText) && sqlText[i] != '\n' && sqlText[i] != '\r' {
@@ -63,7 +65,7 @@ func currentPlanBinding(sqlText, hint string) (string, error) {
 		case c == '/' && i+1 < len(sqlText) && sqlText[i+1] == '*':
 			end := strings.Index(sqlText[i+2:], "*/")
 			if end < 0 {
-				return "", newStackErrorf("unterminated comment in binding SQL")
+				return "", util.NewStackErrorf("unterminated comment in binding SQL")
 			}
 			i += end + 4
 		case c == '(':
@@ -85,7 +87,7 @@ func currentPlanBinding(sqlText, hint string) (string, error) {
 		}
 	}
 	if selectEnd < 0 {
-		return "", newStackErrorf("no main SELECT found in binding SQL")
+		return "", util.NewStackErrorf("no main SELECT found in binding SQL")
 	}
 	// Replace an existing optimizer hint immediately after the main SELECT,
 	// rather than emitting two adjacent hints. All other SQL bytes are retained.
@@ -96,7 +98,7 @@ func currentPlanBinding(sqlText, hint string) (string, error) {
 	if strings.HasPrefix(sqlText[hintStart:], "/*+") {
 		end := strings.Index(sqlText[hintStart+3:], "*/")
 		if end < 0 {
-			return "", newStackErrorf("unterminated optimizer hint in binding SQL")
+			return "", util.NewStackErrorf("unterminated optimizer hint in binding SQL")
 		}
 		return sqlText[:selectEnd] + " /*+ " + hint + " */" + sqlText[hintStart+3+end+2:], nil
 	}

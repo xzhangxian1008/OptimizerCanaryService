@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis"
+	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis/compare"
 	"go.uber.org/zap"
 )
 
@@ -44,7 +45,7 @@ func main() {
 	validator := diagnosis.NewValidator(connections)
 	handler := diagnosis.NewHandler(validator, logger)
 	connectionHandler := diagnosis.NewConnectionHandler(connections, logger)
-	compareHandler := diagnosis.NewCompareHandler(connections, logger)
+	compareHandler := compare.NewCompareHandler(connections, logger)
 
 	mux := http.NewServeMux()
 	mux.Handle("POST /validate", handler)

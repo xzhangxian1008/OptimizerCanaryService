@@ -1,4 +1,4 @@
-package diagnosis
+package compare
 
 import (
 	"context"

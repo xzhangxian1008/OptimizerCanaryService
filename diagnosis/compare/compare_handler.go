@@ -1,4 +1,4 @@
-package diagnosis
+package compare
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis/util"
 	"go.uber.org/zap"
 )
 
@@ -36,7 +37,7 @@ func (h *CompareHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	report, err := h.comparer.Compare(r.Context())
 	if err != nil {
 		h.logger.Error("comparison failed", zap.Error(err))
-		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"status": "failed", "reason": err.Error()})
+		util.WriteJSON(w, http.StatusUnprocessableEntity, map[string]string{"status": "failed", "reason": err.Error()})
 		return
 	}
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")

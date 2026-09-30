@@ -1,4 +1,4 @@
-package diagnosis
+package compare
 
 import (
 	"context"
@@ -8,9 +8,16 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
+	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis/util"
 	"go.uber.org/zap"
+)
+
+const (
+	queryTimeout   = 15 * time.Second
+	explainTimeout = 15 * time.Second
 )
 
 const compareStatementsQuery = `SELECT COALESCE(schema_name, ''), digest,
@@ -39,22 +46,22 @@ func (r *SQLRepository) StatementPlans(ctx context.Context) ([]StatementPlan, er
 	r.logger.Info("execute SQL", zap.String("sql", compareStatementsQuery))
 	rows, err := r.db.QueryContext(queryCtx, compareStatementsQuery)
 	if err != nil {
-		return nil, newStackErrorf("query cluster statement plans: %w", err)
+		return nil, util.NewStackErrorf("query cluster statement plans: %w", err)
 	}
 	defer rows.Close()
 	var statements []StatementPlan
 	for rows.Next() {
 		var statement StatementPlan
 		if err := rows.Scan(&statement.Schema, &statement.SQLDigest, &statement.SQL, &statement.ExecCount, &statement.PlanDigest, &statement.Plan, &statement.ExecTime, &statement.PlanHint); err != nil {
-			return nil, newStackErrorf("scan cluster statement plan: %w", err)
+			return nil, util.NewStackErrorf("scan cluster statement plan: %w", err)
 		}
 		if statement.SQLDigest == "" || statement.PlanDigest == "" || strings.TrimSpace(statement.SQL) == "" {
-			return nil, newStackErrorf("cluster statement plan is missing SQL or digest (SQL digest %q)", statement.SQLDigest)
+			return nil, util.NewStackErrorf("cluster statement plan is missing SQL or digest (SQL digest %q)", statement.SQLDigest)
 		}
 		statements = append(statements, statement)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, newStackErrorf("read cluster statement plans: %w", err)
+		return nil, util.NewStackErrorf("read cluster statement plans: %w", err)
 	}
 	return statements, nil
 }
@@ -69,14 +76,14 @@ func (r *SQLRepository) ExplainPlanWithDigest(ctx context.Context, sample Sample
 	defer cancel()
 	conn, err := r.db.Conn(explainCtx)
 	if err != nil {
-		return "", "", newStackErrorf("acquire connection: %w", err)
+		return "", "", util.NewStackErrorf("acquire connection: %w", err)
 	}
 	defer conn.Close()
 	if sample.Schema != "" {
 		useSQL := "USE `" + strings.ReplaceAll(sample.Schema, "`", "``") + "`"
 		r.logger.Info("execute SQL", zap.String("sql", useSQL))
 		if _, err := conn.ExecContext(explainCtx, useSQL); err != nil {
-			return "", "", newStackErrorf("select schema %q: %w", sample.Schema, err)
+			return "", "", util.NewStackErrorf("select schema %q: %w", sample.Schema, err)
 		}
 	}
 	statement, arguments, err := explainableSample(sample.SQL)
@@ -84,13 +91,13 @@ func (r *SQLRepository) ExplainPlanWithDigest(ctx context.Context, sample Sample
 		return "", "", fmt.Errorf("parse prepared statement sample: %w", err)
 	}
 	if statement == "" {
-		return "", "", newStackErrorf("cannot explain an empty statement")
+		return "", "", util.NewStackErrorf("cannot explain an empty statement")
 	}
 	explainSQL := "EXPLAIN " + statement
 	r.logger.Info("execute SQL", zap.String("schema", sample.Schema), zap.String("sql", explainSQL))
 	rows, err := conn.QueryContext(explainCtx, explainSQL, arguments...)
 	if err != nil {
-		return "", "", newStackErrorf("explain statement: %w", err)
+		return "", "", util.NewStackErrorf("explain statement: %w", err)
 	}
 	defer rows.Close()
 	columns, values, err := readStringRows(rows)
@@ -123,7 +130,7 @@ func (r *SQLRepository) explainPlanDigest(ctx context.Context, conn *sql.Conn, s
 
 	rows, err := conn.QueryContext(ctx, explainPlanDigestQuery, schema, schema)
 	if err != nil {
-		return "", newStackErrorf("query EXPLAIN plan digest: %w", err)
+		return "", util.NewStackErrorf("query EXPLAIN plan digest: %w", err)
 	}
 	defer rows.Close()
 	newOperators, err := planOperators(newPlan)
@@ -135,7 +142,7 @@ func (r *SQLRepository) explainPlanDigest(ctx context.Context, conn *sql.Conn, s
 	for rows.Next() {
 		var querySample, digest, plan string
 		if err := rows.Scan(&querySample, &digest, &plan); err != nil {
-			return "", newStackErrorf("scan EXPLAIN plan digest: %w", err)
+			return "", util.NewStackErrorf("scan EXPLAIN plan digest: %w", err)
 		}
 		if normalizeExplainSQL(querySample) != normalizedExplainSQL {
 			continue
@@ -146,9 +153,9 @@ func (r *SQLRepository) explainPlanDigest(ctx context.Context, conn *sql.Conn, s
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return "", newStackErrorf("read EXPLAIN plan digests: %w", err)
+		return "", util.NewStackErrorf("read EXPLAIN plan digests: %w", err)
 	}
-	return "", newStackErrorf("no plan digest found for EXPLAIN of SQL in schema %q", schema)
+	return "", util.NewStackErrorf("no plan digest found for EXPLAIN of SQL in schema %q", schema)
 }
 
 func normalizeExplainSQL(sqlText string) string {
@@ -262,7 +269,7 @@ func explainableSample(sample string) (string, []any, error) {
 	argumentText := strings.TrimSpace(sample[markerIndex+len(marker):])
 	argumentText = strings.TrimSpace(strings.TrimSuffix(argumentText, ";"))
 	if !strings.HasSuffix(argumentText, "]") {
-		return "", nil, newStackErrorf("arguments annotation is not closed")
+		return "", nil, util.NewStackErrorf("arguments annotation is not closed")
 	}
 	argumentText = strings.TrimSpace(strings.TrimSuffix(argumentText, "]"))
 	arguments, err := parseTiDBArguments(argumentText)
@@ -310,7 +317,7 @@ func parseTiDBArguments(text string) ([]any, error) {
 			depth++
 		case ')':
 			if depth == 0 {
-				return nil, newStackErrorf("unexpected ')' in arguments")
+				return nil, util.NewStackErrorf("unexpected ')' in arguments")
 			}
 			depth--
 		case ',':
@@ -321,10 +328,10 @@ func parseTiDBArguments(text string) ([]any, error) {
 		}
 	}
 	if quote != 0 {
-		return nil, newStackErrorf("unterminated quoted argument")
+		return nil, util.NewStackErrorf("unterminated quoted argument")
 	}
 	if depth != 0 {
-		return nil, newStackErrorf("unclosed parenthesized argument")
+		return nil, util.NewStackErrorf("unclosed parenthesized argument")
 	}
 	parts = append(parts, strings.TrimSpace(text[start:]))
 
@@ -342,7 +349,7 @@ func parseTiDBArguments(text string) ([]any, error) {
 func parseTiDBArgument(text string) (any, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
-		return nil, newStackErrorf("empty argument")
+		return nil, util.NewStackErrorf("empty argument")
 	}
 	if strings.EqualFold(text, "NULL") {
 		return nil, nil
@@ -351,7 +358,7 @@ func parseTiDBArgument(text string) (any, error) {
 		if text[0] == '"' {
 			value, err := strconv.Unquote(text)
 			if err != nil {
-				return nil, newStackErrorf("decode string argument %q: %w", text, err)
+				return nil, util.NewStackErrorf("decode string argument %q: %w", text, err)
 			}
 			return value, nil
 		}
@@ -381,7 +388,7 @@ func (r *SQLRepository) Bindings(ctx context.Context, digest, schema string) (st
 	r.logger.Info("execute SQL", zap.String("sql", compareBindingsQuery), zap.String("digest", digest), zap.String("schema", schema))
 	rows, err := r.db.QueryContext(queryCtx, compareBindingsQuery, digest, schema)
 	if err != nil {
-		return "", newStackErrorf("query bindings: %w", err)
+		return "", util.NewStackErrorf("query bindings: %w", err)
 	}
 	defer rows.Close()
 	columns, values, err := readStringRows(rows)
@@ -403,7 +410,7 @@ func (r *SQLRepository) Bindings(ctx context.Context, digest, schema string) (st
 func readStringRows(rows *sql.Rows) ([]string, [][]string, error) {
 	columns, err := rows.Columns()
 	if err != nil {
-		return nil, nil, newStackErrorf("read result columns: %w", err)
+		return nil, nil, util.NewStackErrorf("read result columns: %w", err)
 	}
 	var result [][]string
 	for rows.Next() {
@@ -413,7 +420,7 @@ func readStringRows(rows *sql.Rows) ([]string, [][]string, error) {
 			destinations[i] = &values[i]
 		}
 		if err := rows.Scan(destinations...); err != nil {
-			return nil, nil, newStackErrorf("scan result row: %w", err)
+			return nil, nil, util.NewStackErrorf("scan result row: %w", err)
 		}
 		row := make([]string, len(columns))
 		for i := range values {
@@ -422,17 +429,9 @@ func readStringRows(rows *sql.Rows) ([]string, [][]string, error) {
 		result = append(result, row)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, nil, newStackErrorf("read result rows: %w", err)
+		return nil, nil, util.NewStackErrorf("read result rows: %w", err)
 	}
 	return columns, result, nil
-}
-
-func (m *ConnectionManager) Compare(ctx context.Context) (string, error) {
-	db, err := m.current()
-	if err != nil {
-		return "", err
-	}
-	return NewComparer(NewSQLRepository(db, m.logger)).Compare(ctx)
 }
 
 var _ CompareRepository = (*SQLRepository)(nil)

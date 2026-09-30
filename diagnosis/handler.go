@@ -1,9 +1,9 @@
 package diagnosis
 
 import (
-	"encoding/json"
 	"net/http"
 
+	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis/util"
 	"go.uber.org/zap"
 )
 
@@ -26,11 +26,5 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		zap.String("status", response.Status),
 		zap.String("reason", response.Reason),
 	)
-	writeJSON(w, status, response)
-}
-
-func writeJSON(w http.ResponseWriter, status int, value any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
+	util.WriteJSON(w, status, response)
 }
