@@ -30,7 +30,9 @@ WHERE LOWER(stmt_type) = 'select'
   AND plan_digest IS NOT NULL AND plan_digest <> ''
   AND plan IS NOT NULL AND plan <> ''
   AND LOWER(query_sample_text) NOT LIKE '%information_schema.cluster_statements_summary%'
+  AND LOWER(query_sample_text) NOT LIKE '%information_schema.tiflash_replica%'
   AND LOWER(query_sample_text) NOT LIKE '%mysql.bind_info%'
+  AND LOWER(query_sample_text) NOT LIKE 'select @@version_comment%'
 ORDER BY digest, schema_name, plan_digest, instance`
 
 const compareBindingsQuery = `SELECT original_sql, bind_sql, default_db, status,

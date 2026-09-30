@@ -1,3 +1,4 @@
 /diagnostic-service
+compare.md
 *.out
 cmd/cmd

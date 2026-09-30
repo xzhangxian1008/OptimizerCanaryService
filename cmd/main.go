@@ -29,16 +29,41 @@ func main() {
 	}
 	defer func() { _ = logger.Sync() }()
 
-	httpAddress := flag.String("http-addr", "", "HTTP listen address in host:port form")
+	mode := flag.String("mode", "service", "startup mode: service or prepare")
+	httpAddress := flag.String("http-addr", "", "HTTP listen address in host:port form (service mode)")
+	prepareOptions := registerPrepareFlags(flag.CommandLine)
 	flag.Usage = func() {
-		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "usage: %s -http-addr <host:port>\n", os.Args[0])
+		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "usage:\n")
+		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "  %s [-mode service] -http-addr <host:port>\n", os.Args[0])
+		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "  %s -mode prepare -dsn <TiDB DSN> [-prepare-schema <schema>] [-prepare-concurrency <n>] [-prepare-duration <duration>]\n", os.Args[0])
 		flag.PrintDefaults()
 	}
 	flag.Parse()
-	if *httpAddress == "" || flag.NArg() != 0 {
+	if flag.NArg() != 0 {
 		flag.Usage()
 		os.Exit(1)
 	}
+	shutdownCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	switch *mode {
+	case "prepare":
+		if err := runPrepare(shutdownCtx, *prepareOptions, logger); err != nil {
+			logger.Error("prepare TiDB test data", zap.Error(err))
+			os.Exit(1)
+		}
+		return
+	case "service":
+		if *httpAddress == "" {
+			flag.Usage()
+			os.Exit(1)
+		}
+	default:
+		_, _ = fmt.Fprintf(os.Stderr, "unsupported mode %q\n", *mode)
+		flag.Usage()
+		os.Exit(1)
+	}
+
 	connections := diagnosis.NewConnectionManager(logger)
 	defer connections.Close()
 
@@ -66,8 +91,6 @@ func main() {
 		IdleTimeout:       60 * time.Second,
 	}
 
-	shutdownCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 	go func() {
 		<-shutdownCtx.Done()
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
