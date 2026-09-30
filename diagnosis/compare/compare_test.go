@@ -45,6 +45,9 @@ func TestComparerOnlyReportsChangedIDAndTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compare returned error: %v", err)
 	}
+	if !strings.Contains(report, "## Summary\n\n- SQLs Checked: 2\n- Total ExecCount: 9\n- SQLs with Plan Changes: 1") {
+		t.Fatalf("unexpected report summary: %s", report)
+	}
 	if !strings.Contains(report, "SELECT /*+ HASH_AGG() */ * FROM t WHERE id = 2") {
 		t.Fatal("missing current plan hinted SQL")
 	}

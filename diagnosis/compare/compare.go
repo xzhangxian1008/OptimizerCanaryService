@@ -109,6 +109,12 @@ type comparedPlan struct {
 	bindings      string
 }
 
+type reportSummary struct {
+	checkedSQLs    int
+	totalExecCount uint64
+	changedSQLs    int
+}
+
 func (c *Comparer) Compare(ctx context.Context) (string, error) {
 	// Finish collecting the snapshot before EXPLAIN adds more summary entries.
 	sqlInfos, err := c.repository.GetSQLInfo(ctx)
@@ -118,8 +124,15 @@ func (c *Comparer) Compare(ctx context.Context) (string, error) {
 	sqlInfos = aggregateSqlInfos(sqlInfos)
 	type explanation struct{ plan, digest string }
 	explained := make(map[Sample]explanation)
+	type sqlKey struct{ schema, digest string }
+	checkedSQLs := make(map[sqlKey]struct{})
+	changedSQLs := make(map[sqlKey]struct{})
+	var totalExecCount uint64
 	var changed []comparedPlan
 	for _, sqlInfo := range sqlInfos {
+		key := sqlKey{schema: sqlInfo.Schema, digest: sqlInfo.SQLDigest}
+		checkedSQLs[key] = struct{}{}
+		totalExecCount += sqlInfo.ExecCount
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
@@ -156,6 +169,7 @@ func (c *Comparer) Compare(ctx context.Context) (string, error) {
 		changed = append(changed, comparedPlan{
 			statement: sqlInfo, newPlan: newPlan.plan, newPlanDigest: newPlan.digest, bindings: binding,
 		})
+		changedSQLs[key] = struct{}{}
 	}
 	slices.SortFunc(changed, func(a, b comparedPlan) int {
 		if a.statement.ExecTime > b.statement.ExecTime {
@@ -169,7 +183,11 @@ func (c *Comparer) Compare(ctx context.Context) (string, error) {
 		}
 		return strings.Compare(a.statement.PlanDigest, b.statement.PlanDigest)
 	})
-	return renderComparison(changed), nil
+	return renderComparison(changed, reportSummary{
+		checkedSQLs:    len(checkedSQLs),
+		totalExecCount: totalExecCount,
+		changedSQLs:    len(changedSQLs),
+	}), nil
 }
 
 func aggregateSqlInfos(sqlInfos []SQLInfo) []SQLInfo {
@@ -198,9 +216,13 @@ func aggregateSqlInfos(sqlInfos []SQLInfo) []SQLInfo {
 	return result
 }
 
-func renderComparison(plans []comparedPlan) string {
+func renderComparison(plans []comparedPlan, summary reportSummary) string {
 	var report strings.Builder
 	report.WriteString("# SQL Plan Comparison\n\n")
+	report.WriteString("## Summary\n\n")
+	fmt.Fprintf(&report, "- SQLs Checked: %d\n", summary.checkedSQLs)
+	fmt.Fprintf(&report, "- Total ExecCount: %d\n", summary.totalExecCount)
+	fmt.Fprintf(&report, "- SQLs with Plan Changes: %d\n\n", summary.changedSQLs)
 	report.WriteString("| SQL Digest | Total ExecTime | ExecCount | Current Plan | New Plan | Plan Change | Binding of the Current Plan |\n")
 	report.WriteString("| --- | ---: | ---: | --- | --- | --- | --- |\n")
 	anchors := make(map[string]int)

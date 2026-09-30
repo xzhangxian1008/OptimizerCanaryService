@@ -1,5 +1,11 @@
 # SQL Plan Comparison
 
+## Summary
+
+- SQLs Checked: 30
+- Total ExecCount: 18673
+- SQLs with Plan Changes: 25
+
 | SQL Digest | Total ExecTime | ExecCount | Current Plan | New Plan | Plan Change | Binding of the Current Plan |
 | --- | ---: | ---: | --- | --- | --- | --- |
 | [5a59161f](#sql-5a59161f) | 13.34s | 1244 | [25da9ba3](#current-plan-5a59161f-25da9ba3) | [3599a539](#new-plan-5a59161f-3599a539) | Join Order Change | [binding stmt](#binding-stmt-5a59161f-25da9ba3) |

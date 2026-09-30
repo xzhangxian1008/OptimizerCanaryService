@@ -50,6 +50,11 @@ SQL digest, current plan digest, and new plan digest are shortened to eight
 characters; the SQL digest links to the full SQL heading. Rows are sorted by
 total execution time (ExecTime) in descending order.
 
+The report starts with a summary containing the number of distinct SQL
+statements checked (grouped by schema and SQL digest), the total execution
+count across all checked plans, and the number of distinct SQL statements with
+plan changes.
+
 The columns are SQL Digest, Total ExecTime, ExecCount, Current Plan, New Plan,
 Plan Change (currently `N/A`), and Binding of the Current Plan. Total ExecTime
 sums SUM_LATENCY for each schema/SQL digest/plan digest group and displays
