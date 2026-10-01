@@ -16,13 +16,13 @@ func TestCurrentPlanBinding(t *testing.T) {
 		{"existing hint", "SELECT /*+ OLD() */ * FROM t", "SELECT /*+ H() */ * FROM t"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := currentPlanBinding(tc.sql, "H()")
+			got, err := getCurrentPlanBinding(tc.sql, "H()")
 			if err != nil || got != tc.want {
 				t.Fatalf("got %q, %v; want %q", got, err, tc.want)
 			}
 		})
 	}
-	if got, err := currentPlanBinding("SELECT 1", ""); err != nil || got != "" {
+	if got, err := getCurrentPlanBinding("SELECT 1", ""); err != nil || got != "" {
 		t.Fatalf("empty hint: %q %v", got, err)
 	}
 }

@@ -71,67 +71,124 @@ func (r *SQLRepository) GetSQLInfo(ctx context.Context) ([]SQLInfo, error) {
 }
 
 func (r *SQLRepository) ExplainPlan(ctx context.Context, sample Sample) (string, error) {
-	plan, _, err := r.ExplainPlanWithDigest(ctx, sample)
-	return plan, err
+	return r.executeExplainPlan(ctx, sample)
 }
 
 func (r *SQLRepository) ExplainPlanWithDigest(ctx context.Context, sample Sample) (string, string, error) {
-	explainCtx, cancel := context.WithTimeout(ctx, explainTimeout)
-	defer cancel()
-	conn, err := r.db.Conn(explainCtx)
+	planText, err := r.executeExplainPlan(ctx, sample)
 	if err != nil {
-		return "", "", util.NewStackErrorf("acquire connection: %w", err)
+		return "", "", err
 	}
-	defer conn.Close()
-	if sample.Schema != "" {
-		useSQL := "USE `" + strings.ReplaceAll(sample.Schema, "`", "``") + "`"
-		r.logger.Info("execute SQL", zap.String("sql", useSQL))
-		if _, err := conn.ExecContext(explainCtx, useSQL); err != nil {
-			return "", "", util.NewStackErrorf("select schema %q: %w", sample.Schema, err)
-		}
-	}
-	statement, arguments, err := explainableSample(sample.SQL)
-	if err != nil {
-		return "", "", fmt.Errorf("parse prepared statement sample: %w", err)
-	}
-	if statement == "" {
-		return "", "", util.NewStackErrorf("cannot explain an empty statement")
-	}
-	explainSQL := "EXPLAIN " + statement
-	r.logger.Info("execute SQL", zap.String("schema", sample.Schema), zap.String("sql", explainSQL))
-	rows, err := conn.QueryContext(explainCtx, explainSQL, arguments...)
-	if err != nil {
-		return "", "", util.NewStackErrorf("explain statement: %w", err)
-	}
-	defer rows.Close()
-	columns, values, err := readStringRows(rows)
-	if err != nil {
-		return "", "", fmt.Errorf("read EXPLAIN result: %w", err)
-	}
-	var plan strings.Builder
-	plan.WriteString(strings.Join(columns, "\t"))
-	for _, row := range values {
-		plan.WriteByte('\n')
-		plan.WriteString(strings.Join(row, "\t"))
-	}
-	planText := plan.String()
-	planDigest, err := r.explainPlanDigest(explainCtx, conn, sample.Schema, explainSQL, planText)
+	planDigest, err := r.GetNewPlanDigest(ctx, sample, planText)
 	if err != nil {
 		return "", "", err
 	}
 	return planText, planDigest, nil
 }
 
-func (r *SQLRepository) explainPlanDigest(ctx context.Context, conn *sql.Conn, schema, explainSQL, newPlan string) (string, error) {
+func (r *SQLRepository) executeExplainPlan(ctx context.Context, sample Sample) (string, error) {
+	explainCtx, cancel := context.WithTimeout(ctx, explainTimeout)
+	defer cancel()
+
+	conn, err := r.db.Conn(explainCtx)
+	if err != nil {
+		return "", util.NewStackErrorf("acquire connection: %w", err)
+	}
+
+	defer conn.Close()
+
+	if sample.Schema != "" {
+		useSQL := "USE `" + strings.ReplaceAll(sample.Schema, "`", "``") + "`"
+		r.logger.Info("execute SQL", zap.String("sql", useSQL))
+
+		if _, err := conn.ExecContext(explainCtx, useSQL); err != nil {
+			return "", util.NewStackErrorf("select schema %q: %w", sample.Schema, err)
+		}
+	}
+
+	statement, arguments, err := convertToLegalSQL(sample.SQL)
+	if err != nil {
+		return "", fmt.Errorf("parse prepared statement sample: %w", err)
+	}
+	if statement == "" {
+		return "", util.NewStackErrorf("cannot explain an empty statement")
+	}
+
+	explainSQL := "EXPLAIN " + statement
+	r.logger.Info("execute SQL", zap.String("schema", sample.Schema), zap.String("sql", explainSQL))
+	rows, err := conn.QueryContext(explainCtx, explainSQL, arguments...)
+	if err != nil {
+		return "", util.NewStackErrorf("explain statement: %w", err)
+	}
+
+	defer rows.Close()
+
+	columns, values, err := readStringRows(rows)
+	if err != nil {
+		return "", fmt.Errorf("read EXPLAIN result: %w", err)
+	}
+
+	var plan strings.Builder
+	plan.WriteString(strings.Join(columns, "\t"))
+	for _, row := range values {
+		plan.WriteByte('\n')
+		plan.WriteString(strings.Join(row, "\t"))
+	}
+
+	return plan.String(), nil
+}
+
+func (r *SQLRepository) GetNewPlanDigest(ctx context.Context, sample Sample, newPlan string) (string, error) {
+	digestCtx, cancel := context.WithTimeout(ctx, explainTimeout)
+	defer cancel()
+	explainSQL := "EXPLAIN " + sample.SQL
+
+	conn, err := r.db.Conn(digestCtx)
+	if err != nil {
+		return r.planDigestUnavailable(sample.Schema, explainSQL, util.NewStackErrorf("acquire connection for plan digest: %w", err))
+	}
+	defer conn.Close()
+
+	if sample.Schema != "" {
+		useSQL := "USE `" + strings.ReplaceAll(sample.Schema, "`", "``") + "`"
+		if _, err := conn.ExecContext(digestCtx, useSQL); err != nil {
+			return r.planDigestUnavailable(sample.Schema, explainSQL, util.NewStackErrorf("select schema for plan digest %q: %w", sample.Schema, err))
+		}
+	}
+	statement, _, err := convertToLegalSQL(sample.SQL)
+	if err != nil {
+		return r.planDigestUnavailable(sample.Schema, explainSQL, fmt.Errorf("parse prepared statement sample for plan digest: %w", err))
+	}
+	explainSQL = "EXPLAIN " + statement
+	planDigest, err := r.getNewPlanDigest(digestCtx, conn, sample.Schema, explainSQL, newPlan)
+	if err != nil {
+		return r.planDigestUnavailable(sample.Schema, explainSQL, err)
+	}
+	return planDigest, nil
+}
+
+func (r *SQLRepository) planDigestUnavailable(schema, explainSQL string, err error) (string, error) {
+	r.logger.Warn("get new plan digest failed; continuing without digest",
+		zap.String("schema", schema),
+		zap.String("sql", explainSQL),
+		zap.Error(err),
+	)
+	return "N/A", nil
+}
+
+func (r *SQLRepository) getNewPlanDigest(ctx context.Context, conn *sql.Conn, schema, explainSQL, newPlan string) (string, error) {
 	rows, err := conn.QueryContext(ctx, explainPlanDigestQuery, schema, schema)
 	if err != nil {
 		return "", util.NewStackErrorf("query EXPLAIN plan digest: %w", err)
 	}
+
 	defer rows.Close()
+
 	newParsedPlan, err := parsePlan(newPlan)
 	if err != nil {
 		return "", fmt.Errorf("read EXPLAIN plan for digest lookup: %w", err)
 	}
+
 	newDigestOperators := newParsedPlan
 	normalizedExplainSQL := normalizeExplainSQL(explainSQL)
 	for rows.Next() {
@@ -147,6 +204,7 @@ func (r *SQLRepository) explainPlanDigest(ctx context.Context, conn *sql.Conn, s
 			return digest, nil
 		}
 	}
+
 	if err := rows.Err(); err != nil {
 		return "", util.NewStackErrorf("read EXPLAIN plan digests: %w", err)
 	}

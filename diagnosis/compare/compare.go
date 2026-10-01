@@ -31,7 +31,7 @@ type CompareRepository interface {
 }
 
 type planDigestRepository interface {
-	ExplainPlanWithDigest(context.Context, Sample) (string, string, error)
+	GetNewPlanDigest(context.Context, Sample, string) (string, error)
 }
 
 type Comparer struct {
@@ -414,21 +414,16 @@ func (c *Comparer) Compare(ctx context.Context) (string, error) {
 			return "", err
 		}
 
-		oldPlan, err := parsePlan(sqlInfo.Plan)
+		// Get current plan
+		currentPlan, err := parsePlan(sqlInfo.Plan)
 		if err != nil {
 			return "", fmt.Errorf("SQL digest %s, plan digest %s: read current plan: %w", sqlInfo.SQLDigest, sqlInfo.PlanDigest, err)
 		}
 
+		// Get new plan
 		newPlan, ok := explained[sqlInfo.Sample]
 		if !ok {
-			if repository, ok := c.repository.(planDigestRepository); ok {
-				newPlan.plan, newPlan.digest, err = repository.ExplainPlanWithDigest(ctx, sqlInfo.Sample)
-			} else {
-				newPlan.plan, err = c.repository.ExplainPlan(ctx, sqlInfo.Sample)
-				// Repositories that only provide EXPLAIN text are mainly useful
-				// for tests and adapters; preserve a visible digest in that case.
-				newPlan.digest = sqlInfo.PlanDigest
-			}
+			newPlan.plan, err = c.repository.ExplainPlan(ctx, sqlInfo.Sample)
 
 			if err != nil {
 				return "", fmt.Errorf("SQL digest %s: %w", sqlInfo.SQLDigest, err)
@@ -442,12 +437,24 @@ func (c *Comparer) Compare(ctx context.Context) (string, error) {
 			return "", fmt.Errorf("SQL digest %s: read new plan: %w", sqlInfo.SQLDigest, err)
 		}
 
-		equal, planChange := comparePlans(oldPlan, newPlanParsed)
+		equal, planChange := comparePlans(currentPlan, newPlanParsed)
 		if equal {
 			continue
 		}
 
-		binding, err := currentPlanBinding(sqlInfo.SQL, sqlInfo.PlanHint)
+		// Get new plan digest
+		if repository, ok := c.repository.(planDigestRepository); ok {
+			newPlan.digest, err = repository.GetNewPlanDigest(ctx, sqlInfo.Sample, newPlan.plan)
+			if err != nil {
+				return "", fmt.Errorf("SQL digest %s: get new plan digest: %w", sqlInfo.SQLDigest, err)
+			}
+		} else {
+			// Repositories that only provide EXPLAIN text are mainly useful
+			// for tests and adapters; preserve a visible digest in that case.
+			newPlan.digest = sqlInfo.PlanDigest
+		}
+
+		binding, err := getCurrentPlanBinding(sqlInfo.SQL, sqlInfo.PlanHint)
 		if err != nil {
 			return "", fmt.Errorf("SQL digest %s: build current plan binding: %w", sqlInfo.SQLDigest, err)
 		}

@@ -38,9 +38,8 @@ WHERE sql_digest = ? AND status <> 'deleted'
   AND (default_db = ? OR default_db = '')
 ORDER BY update_time, bind_sql`
 
-// TODO(xzx): we should not get explain plan digest by this way
 const explainPlanDigestQuery = `SELECT COALESCE(query_sample_text, ''), COALESCE(plan_digest, ''), COALESCE(plan, '')
-FROM information_schema.cluster_statements_summary
+FROM information_schema.statements_summary
 WHERE LOWER(stmt_type) IN ('explainsql', 'explain')
   AND (? = '' OR COALESCE(schema_name, '') = ?)
   AND plan_digest IS NOT NULL AND plan_digest <> ''
@@ -122,7 +121,7 @@ func isDoubleQuotedStringStart(sqlText string, index int) bool {
 	}
 }
 
-// explainableSample removes the annotation TiDB appends to a server-side
+// convertToLegalSQL removes the annotation TiDB appends to a server-side
 // prepared statement in QUERY_SAMPLE_TEXT and turns its values into database
 // parameters. For example:
 //
@@ -131,7 +130,7 @@ func isDoubleQuotedStringStart(sqlText string, index int) bool {
 // becomes EXPLAIN SELECT * FROM t WHERE id = ? with one bound argument. Sending
 // the values as database parameters preserves their types and avoids quoting
 // mistakes when a value contains SQL punctuation.
-func explainableSample(sample string) (string, []any, error) {
+func convertToLegalSQL(sample string) (string, []any, error) {
 	sample = strings.TrimSpace(sample)
 	marker := "[arguments:"
 	markerIndex := strings.LastIndex(sample, marker)

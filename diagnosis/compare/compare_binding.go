@@ -21,10 +21,10 @@ func bindingStatement(originSQL, hintedSQL string) string {
 	return fmt.Sprintf("CREATE GLOBAL BINDING FOR %s USING %s;", originSQL, hintedSQL)
 }
 
-// currentPlanBinding generates report text only; it never installs a binding.
+// getCurrentPlanBinding generates report text only; it never installs a binding.
 // Selects inside CTE definitions and subqueries have greater parenthesis depth
 // than the main query. At equal depth the first SELECT wins, including UNION.
-func currentPlanBinding(sqlText, hint string) (string, error) {
+func getCurrentPlanBinding(sqlText, hint string) (string, error) {
 	hint = strings.TrimSpace(hint)
 	if hint == "" {
 		return "", nil

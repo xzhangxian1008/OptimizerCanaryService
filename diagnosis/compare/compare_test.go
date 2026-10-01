@@ -12,6 +12,16 @@ type fakeCompareRepository struct {
 	bindings   map[string]string
 }
 
+type digestCountingRepository struct {
+	fakeCompareRepository
+	digestCalls int
+}
+
+func (r *digestCountingRepository) GetNewPlanDigest(context.Context, Sample, string) (string, error) {
+	r.digestCalls++
+	return "newdigest", nil
+}
+
 func (f *fakeCompareRepository) GetSQLInfo(context.Context) ([]SQLInfo, error) {
 	return f.statements, nil
 }
@@ -203,5 +213,26 @@ func TestComparerIgnoresOperatorNumbersAndSortsByExecTime(t *testing.T) {
 	bi, ci := strings.Index(report, "| [bbbbbbbb]"), strings.Index(report, "| [cccccccc]")
 	if bi < 0 || ci < 0 || ci > bi {
 		t.Fatal("must report task/name changes ordered by ExecTime, not ExecCount")
+	}
+}
+
+func TestComparerGetsNewDigestOnlyForChangedPlans(t *testing.T) {
+	same, changed := Sample{SQL: "select 1"}, Sample{SQL: "select 2"}
+	current := "id\ttask\nTableReader_1\troot"
+	repo := &digestCountingRepository{fakeCompareRepository: fakeCompareRepository{
+		statements: []SQLInfo{
+			{Sample: same, SQLDigest: "same", PlanDigest: "old-same", Plan: current},
+			{Sample: changed, SQLDigest: "changed", PlanDigest: "old-changed", Plan: current},
+		},
+		newPlans: map[Sample]string{
+			same:    "id\ttask\nTableReader_2\troot",
+			changed: "id\ttask\nIndexReader_2\troot",
+		},
+	}}
+	if _, err := NewComparer(repo).Compare(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if repo.digestCalls != 1 {
+		t.Fatalf("GetNewPlanDigest called %d times, want 1", repo.digestCalls)
 	}
 }
