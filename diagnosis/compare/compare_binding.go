@@ -105,6 +105,12 @@ func getCurrentPlanBinding(sqlText, hint string) (string, error) {
 	return sqlText[:selectEnd] + " /*+ " + hint + " */" + sqlText[selectEnd:], nil
 }
 
+// AddOptimizerHint inserts an optimizer hint into the first (top-level) SELECT
+// query block, replacing an existing hint immediately after that SELECT.
+func AddOptimizerHint(sqlText, hint string) (string, error) {
+	return getCurrentPlanBinding(sqlText, hint)
+}
+
 func sqlWordByte(c byte) bool {
 	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' ||
 		c >= '0' && c <= '9' || c == '_' || c == '$' || c >= 128

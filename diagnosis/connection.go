@@ -9,6 +9,7 @@ import (
 	"database/sql"
 
 	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis/compare"
+	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis/index_advisor"
 	"go.uber.org/zap"
 )
 
@@ -114,4 +115,12 @@ func (m *ConnectionManager) Compare(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return compare.NewComparer(compare.NewSQLRepository(db, m.logger)).Compare(ctx)
+}
+
+func (m *ConnectionManager) RecommendIndex(ctx context.Context) ([]index_advisor.RecommendIndexResult, error) {
+	db, err := m.current()
+	if err != nil {
+		return nil, err
+	}
+	return index_advisor.NewSQLRecommendIndexRepository(db, m.logger).RecommendIndex(ctx)
 }

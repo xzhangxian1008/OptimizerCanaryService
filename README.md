@@ -74,6 +74,23 @@ their SQL.
 curl -sS -OJ http://127.0.0.1:8080/compare
 ```
 
+### `GET /recommend-index`
+
+After a TiDB connection has been configured, this endpoint selects `SELECT`
+statements from `information_schema.cluster_statements_summary`, ordered by
+`sum_latency` descending. It evaluates them in that order until it has collected
+up to 30 statements with non-empty index recommendations. Invalid statements
+and statements without recommendations are skipped:
+
+```bash
+curl -sS -OJ http://127.0.0.1:8080/recommend-index
+```
+
+The endpoint returns the complete Markdown report as a file download. With
+`curl -OJ`, the client saves it as `recommend-index.md` in the directory where
+the curl command is executed. On failure, the endpoint returns HTTP 422 with a
+JSON error response.
+
 ### `POST /test/connect` (temporary test endpoint)
 
 This endpoint is currently used to configure the active TiDB connection after

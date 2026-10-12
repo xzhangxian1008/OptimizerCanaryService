@@ -13,6 +13,7 @@ import (
 
 	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis"
 	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis/compare"
+	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis/index_advisor"
 	"go.uber.org/zap"
 )
 
@@ -71,10 +72,12 @@ func main() {
 	handler := diagnosis.NewHandler(validator, logger)
 	connectionHandler := diagnosis.NewConnectionHandler(connections, logger)
 	compareHandler := compare.NewCompareHandler(connections, logger)
+	recommendIndexHandler := index_advisor.NewRecommendIndexHandler(connections, logger)
 
 	mux := http.NewServeMux()
 	mux.Handle("POST /validate", handler)
 	mux.Handle("GET /compare", compareHandler)
+	mux.Handle("GET /recommend-index", recommendIndexHandler)
 	mux.Handle("POST /test/connect", connectionHandler)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

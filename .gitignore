@@ -3,3 +3,5 @@ compare
 compare.md
 *.out
 cmd/cmd
+recommend-index
+recommend-index.md
