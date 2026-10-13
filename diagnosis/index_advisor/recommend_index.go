@@ -3,11 +3,13 @@ package index_advisor
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"html"
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis/compare"
 	"go.uber.org/zap"
@@ -21,11 +23,17 @@ type Sample struct {
 const recommendIndexQueryTimeout = 15 * time.Second
 const recommendIndexMaxResults = 30
 
-// recommendIndexSampleQuery selects the statements with the largest recorded
-// execution latency. Candidates are evaluated in this order until enough
-// statements with useful recommendations have been collected.
-const recommendIndexSampleQuery = `SELECT COALESCE(schema_name, ''), COALESCE(digest, ''), query_sample_text,
-       COALESCE(plan, ''), SUM(COALESCE(exec_count, 0)), SUM(COALESCE(sum_latency, 0))
+// TODO: switch back to recommendIndexAggregatedQuery after the TiDB bug is
+// fixed: https://github.com/pingcap/tidb/issues/71913.
+// The aggregation and ordering in that query currently produce incomplete
+// results on affected TiDB versions. Keep both queries aligned: the active query
+// omits ORDER BY and aggregate functions. When restoring this query, remove
+// the local aggregation and sorting workaround.
+/*
+const recommendIndexAggregatedQuery = `SELECT COALESCE(schema_name, ''), COALESCE(digest, ''), query_sample_text,
+       COALESCE(plan, ''), SUM(COALESCE(exec_count, 0)), SUM(COALESCE(sum_latency, 0)),
+       SUM(COALESCE(avg_mem, 0) * exec_count) / NULLIF(SUM(exec_count), 0),
+       SUM(COALESCE(avg_request_unit_read, 0) * exec_count) / NULLIF(SUM(exec_count), 0)
 FROM information_schema.cluster_statements_summary
 WHERE LOWER(stmt_type) = 'select'
   AND query_sample_text IS NOT NULL AND query_sample_text <> ''
@@ -33,26 +41,41 @@ WHERE LOWER(stmt_type) = 'select'
 GROUP BY schema_name, digest, query_sample_text, plan
 ORDER BY SUM(COALESCE(sum_latency, 0)) DESC
 `
+*/
+
+// recommendIndexSampleQuery deliberately avoids aggregate functions and
+// ordering. Rows are aggregated and sorted in Go because of TiDB issue 71913.
+const recommendIndexSampleQuery = `SELECT COALESCE(schema_name, ''), COALESCE(digest, ''), query_sample_text,
+       COALESCE(plan, ''), COALESCE(exec_count, 0), COALESCE(sum_latency, 0),
+       COALESCE(avg_mem, 0), COALESCE(avg_request_unit_read, 0)
+FROM information_schema.cluster_statements_summary
+WHERE LOWER(stmt_type) = 'select'
+  AND query_sample_text IS NOT NULL AND query_sample_text <> ''
+  AND digest IS NOT NULL AND digest <> ''
+GROUP BY schema_name, digest, query_sample_text, plan, exec_count, sum_latency, avg_mem, avg_request_unit_read, instance`
 
 // RecommendIndexResult contains the statement and the non-empty values
 // returned by TiDB's RECOMMEND INDEX command for that statement.
 type RecommendIndexResult struct {
-	Schema          string                `json:"schema,omitempty"`
-	Digest          string                `json:"digest"`
-	SQL             string                `json:"sql"`
-	ExecTime        uint64                `json:"exec_time"`
-	ExecCount       uint64                `json:"exec_count"`
-	Recommendations []IndexRecommendation `json:"recommendations"`
-	OldPlan         string                `json:"old_plan"`
-	NewSQL          string                `json:"new_sql"`
-	NewPlan         string                `json:"new_plan"`
+	Schema             string                `json:"schema,omitempty"`
+	Digest             string                `json:"digest"`
+	SQL                string                `json:"sql"`
+	ExecTime           uint64                `json:"exec_time"`
+	AvgMem             float64               `json:"avg_mem"`
+	AvgRequestUnitRead float64               `json:"avg_request_unit_read"`
+	ExecCount          uint64                `json:"exec_count"`
+	Recommendations    []IndexRecommendation `json:"recommendations"`
+	OldPlan            string                `json:"old_plan"`
+	NewSQL             string                `json:"new_sql"`
+	NewPlan            string                `json:"new_plan"`
 }
 
 type IndexRecommendation struct {
-	Table   string `json:"table"`
-	Name    string `json:"index_name"`
-	Columns string `json:"index_columns"`
-	output  string
+	Table       string `json:"table"`
+	Name        string `json:"index_name"`
+	Columns     string `json:"index_columns"`
+	output      string
+	improvement *float64
 }
 
 type RecommendIndexRepository interface {
@@ -66,10 +89,12 @@ type SQLRecommendIndexRepository struct {
 
 type recommendIndexSample struct {
 	Sample
-	Digest    string
-	Plan      string
-	ExecTime  uint64
-	ExecCount uint64
+	Digest             string
+	Plan               string
+	ExecTime           uint64
+	ExecCount          uint64
+	AvgMem             float64
+	AvgRequestUnitRead float64
 }
 
 func NewSQLRecommendIndexRepository(db *sql.DB, logger *zap.Logger) *SQLRecommendIndexRepository {
@@ -86,16 +111,16 @@ func (r *SQLRecommendIndexRepository) RecommendIndex(ctx context.Context) ([]Rec
 	}
 	defer rows.Close()
 
-	samples := make([]recommendIndexSample, 0)
+	var rawSamples []recommendIndexSample
 	for rows.Next() {
 		var sample recommendIndexSample
-		if err := rows.Scan(&sample.Schema, &sample.Digest, &sample.SQL, &sample.Plan, &sample.ExecCount, &sample.ExecTime); err != nil {
+		if err := rows.Scan(&sample.Schema, &sample.Digest, &sample.SQL, &sample.Plan, &sample.ExecCount, &sample.ExecTime, &sample.AvgMem, &sample.AvgRequestUnitRead); err != nil {
 			return nil, fmt.Errorf("scan SELECT statement: %w", err)
 		}
 		// TODO: detect truncated query_sample_text and recover or otherwise
 		// handle the complete SQL before sending it to the index advisor.
 		if strings.TrimSpace(sample.SQL) != "" {
-			samples = append(samples, sample)
+			rawSamples = append(rawSamples, sample)
 			r.logger.Debug("collected SQL from cluster_statements_summary",
 				zap.String("schema", sample.Schema),
 				zap.String("digest", sample.Digest),
@@ -107,6 +132,7 @@ func (r *SQLRecommendIndexRepository) RecommendIndex(ctx context.Context) ([]Rec
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("read SELECT statements: %w", err)
 	}
+	samples := aggregateAndSortSamples(rawSamples)
 
 	results := make([]RecommendIndexResult, 0, recommendIndexMaxResults)
 	for _, sample := range samples {
@@ -135,6 +161,14 @@ func (r *SQLRecommendIndexRepository) RecommendIndex(ctx context.Context) ([]Rec
 		if err != nil {
 			return nil, fmt.Errorf("build hypothetical index SQL: %w", err)
 		}
+		oldPlan, err := r.explain(ctx, sample.Sample, recommendableStatement(sample.SQL))
+		if err != nil {
+			if isSQLSyntaxError(err) {
+				r.logger.Warn("skip SQL with syntax error during original EXPLAIN", zap.String("digest", sample.Digest), zap.String("query_sample_text", sample.SQL), zap.Error(err))
+				continue
+			}
+			return nil, err
+		}
 		newPlan, err := r.explain(ctx, sample.Sample, hintedSQL)
 		if err != nil {
 			if isSQLSyntaxError(err) {
@@ -146,24 +180,63 @@ func (r *SQLRecommendIndexRepository) RecommendIndex(ctx context.Context) ([]Rec
 			}
 			return nil, err
 		}
-		// TODO: compare sample.Plan and newPlan and skip this result when the
+		// TODO: compare oldPlan and newPlan and skip this result when the
 		// old and hypothetical-index plans are equal.
 		results = append(results, RecommendIndexResult{
-			Schema:          sample.Schema,
-			Digest:          sample.Digest,
-			SQL:             sample.SQL,
-			ExecTime:        sample.ExecTime,
-			ExecCount:       sample.ExecCount,
-			Recommendations: recommendations,
-			OldPlan:         sample.Plan,
-			NewSQL:          hintedSQL,
-			NewPlan:         newPlan,
+			Schema:             sample.Schema,
+			Digest:             sample.Digest,
+			SQL:                sample.SQL,
+			ExecTime:           sample.ExecTime,
+			ExecCount:          sample.ExecCount,
+			Recommendations:    recommendations,
+			OldPlan:            oldPlan,
+			AvgMem:             sample.AvgMem,
+			AvgRequestUnitRead: sample.AvgRequestUnitRead,
+			NewSQL:             hintedSQL,
+			NewPlan:            newPlan,
 		})
 		if len(results) >= recommendIndexMaxResults {
 			break
 		}
 	}
 	return results, nil
+}
+
+type recommendIndexSampleKey struct {
+	schema string
+	digest string
+	sql    string
+	plan   string
+}
+
+func aggregateAndSortSamples(rawSamples []recommendIndexSample) []recommendIndexSample {
+	byKey := make(map[recommendIndexSampleKey]recommendIndexSample, len(rawSamples))
+	for _, sample := range rawSamples {
+		key := recommendIndexSampleKey{schema: sample.Schema, digest: sample.Digest, sql: sample.SQL, plan: sample.Plan}
+		if existing, ok := byKey[key]; ok {
+			totalCount := existing.ExecCount + sample.ExecCount
+			if totalCount > 0 {
+				existing.AvgMem = (existing.AvgMem*float64(existing.ExecCount) + sample.AvgMem*float64(sample.ExecCount)) / float64(totalCount)
+				existing.AvgRequestUnitRead = (existing.AvgRequestUnitRead*float64(existing.ExecCount) + sample.AvgRequestUnitRead*float64(sample.ExecCount)) / float64(totalCount)
+			}
+			existing.ExecCount = totalCount
+			existing.ExecTime += sample.ExecTime
+			byKey[key] = existing
+		} else {
+			byKey[key] = sample
+		}
+	}
+	samples := make([]recommendIndexSample, 0, len(byKey))
+	for _, sample := range byKey {
+		samples = append(samples, sample)
+	}
+	sort.SliceStable(samples, func(i, j int) bool {
+		if samples[i].ExecTime != samples[j].ExecTime {
+			return samples[i].ExecTime > samples[j].ExecTime
+		}
+		return samples[i].Digest < samples[j].Digest
+	})
+	return samples
 }
 
 func isEmptyQuerySetError(err error) bool {
@@ -228,6 +301,12 @@ func (r *SQLRecommendIndexRepository) recommendFor(ctx context.Context, sample S
 			fields = append(fields, fmt.Sprintf("%s: %s", name, recommendCellString(cells[i])))
 		}
 		advice := IndexRecommendation{Table: row["table"], Name: row["index_name"], Columns: row["index_columns"], output: strings.Join(fields, "\n")}
+		var impacted []struct {
+			Improvement *float64 `json:"Improvement"`
+		}
+		if err := json.Unmarshal([]byte(row["top_impacted_query"]), &impacted); err == nil && len(impacted) > 0 {
+			advice.improvement = impacted[0].Improvement
+		}
 		if advice.Table != "" || advice.Name != "" || advice.Columns != "" {
 			values = append(values, advice)
 		}
@@ -262,7 +341,7 @@ func (r *SQLRecommendIndexRepository) explain(ctx context.Context, sample Sample
 			return "", fmt.Errorf("select schema %q for EXPLAIN: %w", sample.Schema, err)
 		}
 	}
-	explainSQL := "EXPLAIN " + strings.TrimSuffix(strings.TrimSpace(statement), ";")
+	explainSQL := "EXPLAIN FORMAT='verbose' " + strings.TrimSuffix(strings.TrimSpace(statement), ";")
 	rows, err := conn.QueryContext(explainCtx, explainSQL)
 	if err != nil {
 		return "", fmt.Errorf("explain statement: %w", err)
@@ -288,7 +367,7 @@ func (r *SQLRecommendIndexRepository) explain(ctx context.Context, sample Sample
 			if i > 0 {
 				out.WriteByte('\t')
 			}
-			out.WriteString(recommendCellString(cell))
+			out.WriteString(planCellString(cell))
 		}
 		out.WriteByte('\n')
 	}
@@ -333,33 +412,164 @@ func RenderRecommendIndex(results []RecommendIndexResult) string {
 		return results[i].Digest < results[j].Digest
 	})
 	var report strings.Builder
-	report.WriteString("| SQL | Total Exec Time | Total Exec Count | Index Advice | Old Plan | New Plan |\n")
-	report.WriteString("| --- | ---: | ---: | --- | --- | --- |\n")
+	report.WriteString("# Overview\n\n")
+	report.WriteString("| SQL | Total Exec Time | Exec Count | AVG_MEM | AVG_REQ_UNIT_READ | Est Improvement | Index Advice |\n")
+	report.WriteString("| --- | ---: | ---: | ---: | ---: | ---: | --- |\n")
 	for _, result := range results {
 		digest := firstEightRecommend(result.Digest)
 		anchor := "sql-" + strings.ToLower(result.Digest)
-		fmt.Fprintf(&report, "| [%s](#%s) | %s | %d | [detail](#index-recommendation-%s) | [detail](#old-plan-%s) | [detail](#new-plan-%s) |\n",
-			markdownRecommendCell(digest), anchor, formatRecommendExecTime(result.ExecTime), result.ExecCount,
-			strings.ToLower(result.Digest), strings.ToLower(result.Digest), strings.ToLower(result.Digest))
+		fmt.Fprintf(&report, "| [%s](#%s) | %s | %d | %.2f | %.4f | %s | [detail](#index-recommendation-%s) |\n",
+			markdownRecommendCell(digest), anchor, formatRecommendExecTime(result.ExecTime), result.ExecCount, result.AvgMem, result.AvgRequestUnitRead,
+			formatEstImprovement(result.Recommendations), strings.ToLower(result.Digest))
 	}
+	report.WriteString("\n# Recommendation List\n")
 	for _, result := range results {
 		digest := strings.ToLower(result.Digest)
-		fmt.Fprintf(&report, "\n<a id=\"sql-%s\"></a>\n\n## SQL: %s\n\n", digest, html.EscapeString(result.Digest))
+		fmt.Fprintf(&report, "\n<a id=\"sql-%s\"></a>\n\n## SQL: %s\n\n", digest, html.EscapeString(firstEightRecommend(result.Digest)))
+		writeMetadataBlock(&report, fmt.Sprintf("Schema:     %s\nSQL Digest: %s", result.Schema, result.Digest))
+		report.WriteString("\n")
 		report.WriteString("### SQL Statement\n\n")
-		writeRecommendCodeBlock(&report, result.SQL)
+		writeRecommendSQLBlock(&report, result.SQL)
 		fmt.Fprintf(&report, "\n<a id=\"index-recommendation-%s\"></a>\n\n### Index Recommendation\n\n", digest)
-		adviceLines := make([]string, 0, len(result.Recommendations))
 		for i, advice := range result.Recommendations {
-			adviceLines = append(adviceLines, "#### Recommendation "+fmt.Sprint(i+1))
-			adviceLines = append(adviceLines, advice.output)
+			fmt.Fprintf(&report, "#### Recommendation %d\n\n", i+1)
+			var metadata []string
+			for _, field := range strings.Split(advice.output, "\n") {
+				name, value, _ := strings.Cut(field, ":")
+				switch strings.ToLower(strings.TrimSpace(name)) {
+				case "database", "table", "index_name", "index_columns", "est_index_size":
+					metadata = append(metadata, fmt.Sprintf("%-15s %s", strings.TrimSpace(name)+":", strings.TrimSpace(value)))
+				}
+			}
+			writeMetadataBlock(&report, strings.Join(metadata, "\n"))
+			report.WriteString("\n")
+			for _, field := range strings.Split(advice.output, "\n") {
+				name, value, _ := strings.Cut(field, ":")
+				value = strings.TrimSpace(value)
+				switch strings.ToLower(strings.TrimSpace(name)) {
+				case "database", "table", "index_name", "index_columns", "est_index_size":
+					continue
+				case "reason":
+					fmt.Fprintf(&report, "reason: %s\n\n", formatRecommendationReason(value))
+				case "top_impacted_query":
+					writeImpactedQueries(&report, value)
+				case "create_index_statement":
+					report.WriteString("**Create Index Statement**\n\n")
+					writeRecommendSQLBlock(&report, value)
+					report.WriteString("\n")
+				default:
+					fmt.Fprintf(&report, "%s\n\n", field)
+				}
+			}
 		}
-		writeRecommendCodeBlock(&report, strings.Join(adviceLines, "\n"))
 		fmt.Fprintf(&report, "\n<a id=\"old-plan-%s\"></a>\n\n### Old Plan\n\n", digest)
-		writeRecommendCodeBlock(&report, result.OldPlan)
+		writePlanBlock(&report, alignPlanColumns(compare.WithoutPlanColumns(result.OldPlan, "actRows", "execution info", "memory", "disk")))
 		fmt.Fprintf(&report, "\n<a id=\"new-plan-%s\"></a>\n\n### New Plan\n\n", digest)
-		writeRecommendCodeBlock(&report, result.NewSQL+"\n\n"+result.NewPlan)
+		writeRecommendSQLBlock(&report, "-- Sql with hypo_index hint\n"+result.NewSQL)
+		report.WriteString("\n")
+		writePlanBlock(&report, alignPlanColumns(result.NewPlan))
 	}
 	return report.String()
+}
+
+func formatRecommendationReason(reason string) string {
+	if index := strings.Index(strings.ToLower(reason), "in query:"); index >= 0 {
+		return strings.TrimSpace(reason[:index])
+	}
+	return reason
+}
+
+// Metadata uses a transparent monospace block to keep values aligned without
+// the background and border normally applied to fenced code blocks.
+func writeMetadataBlock(out *strings.Builder, content string) {
+	out.WriteString("<pre style=\"background: transparent; border: none; box-shadow: none; padding: 0; white-space: pre; overflow-x: auto; font-family: monospace;\">")
+	out.WriteString(html.EscapeString(content))
+	out.WriteString("</pre>\n")
+}
+
+// Keep wide plan tables on one line per row and allow horizontal scrolling
+// in Markdown viewers that support inline HTML styles.
+func writePlanBlock(out *strings.Builder, plan string) {
+	out.WriteString("<pre style=\"white-space: pre; overflow-x: auto; max-width: 100%;\"><code style=\"white-space: pre; overflow-wrap: normal; word-break: normal;\">")
+	out.WriteString(html.EscapeString(plan))
+	out.WriteString("</code></pre>\n")
+}
+
+// alignPlanColumns replaces tab separators with padding based on the widest
+// value in each column. Leading spaces in operator IDs retain the plan tree.
+func alignPlanColumns(plan string) string {
+	lines := strings.Split(plan, "\n")
+	rows := make([][]string, len(lines))
+	var widths []int
+	for i, line := range lines {
+		rows[i] = strings.Split(line, "\t")
+		for j, value := range rows[i] {
+			value = strings.TrimRight(value, " ")
+			rows[i][j] = value
+			if j >= len(widths) {
+				widths = append(widths, 0)
+			}
+			widths[j] = max(widths[j], utf8.RuneCountInString(value))
+		}
+	}
+	var out strings.Builder
+	for i, row := range rows {
+		if i > 0 {
+			out.WriteByte('\n')
+		}
+		for j, value := range row {
+			out.WriteString(value)
+			if j < len(row)-1 {
+				out.WriteString(strings.Repeat(" ", widths[j]-utf8.RuneCountInString(value)+2))
+			}
+		}
+	}
+	return out.String()
+}
+
+// Each advisor invocation analyzes one SQL. For multiple recommendations,
+// display the best individual estimate, without adding their improvements.
+func formatEstImprovement(recommendations []IndexRecommendation) string {
+	var best *float64
+	for _, advice := range recommendations {
+		if advice.improvement != nil && (best == nil || *advice.improvement > *best) {
+			best = advice.improvement
+		}
+	}
+	if best == nil {
+		return "N/A"
+	}
+	return fmt.Sprintf("%.4f%%", *best*100)
+}
+
+func writeImpactedQueries(out *strings.Builder, value string) {
+	var queries []struct {
+		Query       string   `json:"Query"`
+		Improvement *float64 `json:"Improvement"`
+	}
+	out.WriteString("**Top Impacted Queries**\n\n")
+	if err := json.Unmarshal([]byte(value), &queries); err != nil || len(queries) == 0 {
+		writeRecommendCodeBlock(out, value)
+		out.WriteString("\n")
+		return
+	}
+	for i, query := range queries {
+		fmt.Fprintf(out, "**Query %d**\n\n", i+1)
+		writeRecommendSQLBlock(out, query.Query)
+		if query.Improvement != nil {
+			fmt.Fprintf(out, "\nEstimated Improvement: %.4f%%\n\n", *query.Improvement*100)
+		} else {
+			out.WriteString("\nEstimated Improvement: N/A\n\n")
+		}
+	}
+}
+
+func writeRecommendSQLBlock(out *strings.Builder, content string) {
+	fence := "```"
+	for strings.Contains(content, fence) {
+		fence += "`"
+	}
+	fmt.Fprintf(out, "%ssql\n%s\n%s\n", fence, content, fence)
 }
 
 func firstEightRecommend(value string) string {
@@ -383,4 +593,15 @@ func writeRecommendCodeBlock(out *strings.Builder, content string) {
 		fence += "`"
 	}
 	fmt.Fprintf(out, "%stext\n%s\n%s\n", fence, content, fence)
+}
+
+// Preserve leading spaces and tree branches in EXPLAIN output.
+func planCellString(cell any) string {
+	if cell == nil {
+		return ""
+	}
+	if value, ok := cell.([]byte); ok {
+		return string(value)
+	}
+	return fmt.Sprint(cell)
 }

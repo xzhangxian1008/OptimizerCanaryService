@@ -599,6 +599,12 @@ func writeDetailWithAnchor(details *strings.Builder, anchor, title string, state
 	return anchor
 }
 
+// WithoutPlanColumns removes runtime statistics columns from a recorded plan
+// for report display, preserving its operators and tree structure.
+func WithoutPlanColumns(plan string, columnNames ...string) string {
+	return withoutPlanColumns(plan, columnNames...)
+}
+
 func withoutPlanColumns(plan string, columnNames ...string) string {
 	remove := make(map[int]struct{})
 	lines := strings.Split(plan, "\n")
