@@ -3,430 +3,314 @@
 <table>
 <thead><tr><th>SQL</th><th>Total Time</th><th>Count</th><th>Database</th><th>Table</th><th>Est Cost Change</th><th>Est Improvement</th><th>Advice</th></tr></thead>
 <tbody>
-<tr><td rowspan="1"><a href="#sql-78d2b15d217ab515af03ff2b589c29cf2a1f0380fae3ca44b102e80ca2298573">78d2b15d</a></td><td rowspan="1">0.11s</td><td rowspan="1">5</td><td>test</td><td>customer</td><td>6521776.71 -&gt; 1182.50</td><td>99.9819%</td><td><a href="#index-advice-78d2b15d217ab515af03ff2b589c29cf2a1f0380fae3ca44b102e80ca2298573-1">detail</a></td></tr>
-<tr><td rowspan="1"><a href="#sql-e9572eabc1d81a0065a61aa08a38b91fa60045d08bd3758f1c69d6c0fc7c8a2b">e9572eab</a></td><td rowspan="1">0.10s</td><td rowspan="1">4</td><td>test</td><td>orders</td><td>52569425.39 -&gt; 21147.43</td><td>99.9598%</td><td><a href="#index-advice-e9572eabc1d81a0065a61aa08a38b91fa60045d08bd3758f1c69d6c0fc7c8a2b-1">detail</a></td></tr>
-<tr><td rowspan="1"><a href="#sql-8b124dc6fbb9f51ba9799f2d6007d0f959d18f00ed15a45b93c0a0451a4a2e68">8b124dc6</a></td><td rowspan="1">0.08s</td><td rowspan="1">2</td><td>test</td><td>orders</td><td>46432561.23 -&gt; 3277.60</td><td>99.9929%</td><td><a href="#index-advice-8b124dc6fbb9f51ba9799f2d6007d0f959d18f00ed15a45b93c0a0451a4a2e68-1">detail</a></td></tr>
-<tr><td rowspan="1"><a href="#sql-d2f47f5e68ed76c64f93f801d83d8ee4b855e2eacb00d0363a058ad5050aacca">d2f47f5e</a></td><td rowspan="1">0.03s</td><td rowspan="1">1</td><td>test</td><td>orders</td><td>67228764.21 -&gt; 34.89</td><td>99.9999%</td><td><a href="#index-advice-d2f47f5e68ed76c64f93f801d83d8ee4b855e2eacb00d0363a058ad5050aacca-1">detail</a></td></tr>
-<tr><td rowspan="2"><a href="#sql-a3836a08683b6b039249fbd9dbdba3e0a48ce454539593db7944a50892510989">a3836a08</a></td><td rowspan="2">0.03s</td><td rowspan="2">4</td><td>test</td><td>t1</td><td>765424.20 -&gt; 730128.17</td><td>4.6113%</td><td><a href="#index-advice-a3836a08683b6b039249fbd9dbdba3e0a48ce454539593db7944a50892510989-1">detail</a></td></tr>
-<tr><td>test</td><td>t2</td><td>765424.20 -&gt; 289706.55</td><td>62.1508%</td><td><a href="#index-advice-a3836a08683b6b039249fbd9dbdba3e0a48ce454539593db7944a50892510989-2">detail</a></td></tr>
-<tr><td rowspan="1"><a href="#sql-2e3888683ade4cf13ccd94e3608c528f8fafea6102ca880fb829de2026eee6d3">2e388868</a></td><td rowspan="1">0.02s</td><td rowspan="1">1</td><td>test</td><td>orders</td><td>67228826.77 -&gt; 75.18</td><td>99.9999%</td><td><a href="#index-advice-2e3888683ade4cf13ccd94e3608c528f8fafea6102ca880fb829de2026eee6d3-1">detail</a></td></tr>
-<tr><td rowspan="1"><a href="#sql-a93e251b62c1f1e624e67fa5163d1e3468663f2fa5cb38a239063ac009a0a371">a93e251b</a></td><td rowspan="1">0.02s</td><td rowspan="1">1</td><td>test</td><td>orders</td><td>67456764.23 -&gt; 58333155.05</td><td>13.5251%</td><td><a href="#index-advice-a93e251b62c1f1e624e67fa5163d1e3468663f2fa5cb38a239063ac009a0a371-1">detail</a></td></tr>
-<tr><td rowspan="1"><a href="#sql-4d49791f77e4b9bc1298a0437c7ff2f9af38f84db4cea0cb3aa3dcbfb125b529">4d49791f</a></td><td rowspan="1">0.01s</td><td rowspan="1">1</td><td>test</td><td>orders</td><td>48831709.53 -&gt; 262.68</td><td>99.9995%</td><td><a href="#index-advice-4d49791f77e4b9bc1298a0437c7ff2f9af38f84db4cea0cb3aa3dcbfb125b529-1">detail</a></td></tr>
+<tr><td rowspan="2"><a href="#sql-4f4c289e935f25297eae7382ead734c31ddefa109a21248129d622d9ec14a852">4f4c289e</a></td><td rowspan="2">0.06s</td><td rowspan="2">10</td><td>test</td><td>test_left</td><td>7092147.02 -&gt; 4577628.46</td><td>35.4550%</td><td><a href="#index-advice-4f4c289e935f25297eae7382ead734c31ddefa109a21248129d622d9ec14a852-1">detail</a></td></tr>
+<tr><td>test</td><td>test_right</td><td>7092147.02 -&gt; 2591323.47</td><td>63.4621%</td><td><a href="#index-advice-4f4c289e935f25297eae7382ead734c31ddefa109a21248129d622d9ec14a852-2">detail</a></td></tr>
+<tr><td rowspan="1"><a href="#sql-5c6384fbb4ac24893fc302e62303fc26ae6879537029d1819528e1ba6ef030cb">5c6384fb</a></td><td rowspan="1">0.01s</td><td rowspan="1">9</td><td>test</td><td>test_table</td><td>7338668.79 -&gt; 17.27</td><td>99.9998%</td><td><a href="#index-advice-5c6384fbb4ac24893fc302e62303fc26ae6879537029d1819528e1ba6ef030cb-1">detail</a></td></tr>
+<tr><td rowspan="1"><a href="#sql-0101618ec5b3a438eb8a269bad586645551b7cf4befd1a7f7d0b77559b2658e4">0101618e</a></td><td rowspan="1">0.01s</td><td rowspan="1">10</td><td>test</td><td>test_table</td><td>6274552.34 -&gt; 64556.49</td><td>98.9711%</td><td><a href="#index-advice-0101618ec5b3a438eb8a269bad586645551b7cf4befd1a7f7d0b77559b2658e4-1">detail</a></td></tr>
+<tr><td rowspan="1"><a href="#sql-092ee3850c12585fd64e0a4378a52ea99f6cd0d9e5a85d026f641b7660364986">092ee385</a></td><td rowspan="1">0.01s</td><td rowspan="1">8</td><td>test</td><td>test_table</td><td>7338911.54 -&gt; 1996.35</td><td>99.9728%</td><td><a href="#index-advice-092ee3850c12585fd64e0a4378a52ea99f6cd0d9e5a85d026f641b7660364986-1">detail</a></td></tr>
+<tr><td rowspan="1"><a href="#sql-092f5f2b0ee9feac853046122952c7eef4afd018a6ae04bb927a74e0cf0542d9">092f5f2b</a></td><td rowspan="1">0.00s</td><td rowspan="1">5</td><td>test</td><td>test_table</td><td>6274818.07 -&gt; 3133.56</td><td>99.9501%</td><td><a href="#index-advice-092f5f2b0ee9feac853046122952c7eef4afd018a6ae04bb927a74e0cf0542d9-1">detail</a></td></tr>
+<tr><td rowspan="1"><a href="#sql-dd87ef62f889ebb4c4504927daf72e3ef92794032dab6a10e2e6ac621d4ff23e">dd87ef62</a></td><td rowspan="1">0.00s</td><td rowspan="1">5</td><td>test</td><td>test_table</td><td>6305143.53 -&gt; 270582.74</td><td>95.7085%</td><td><a href="#index-advice-dd87ef62f889ebb4c4504927daf72e3ef92794032dab6a10e2e6ac621d4ff23e-1">detail</a></td></tr>
 </tbody>
 </table>
 
 # Recommendation List
 
-<a id="sql-78d2b15d217ab515af03ff2b589c29cf2a1f0380fae3ca44b102e80ca2298573"></a>
+<a id="sql-4f4c289e935f25297eae7382ead734c31ddefa109a21248129d622d9ec14a852"></a>
 
-## SQL: 78d2b15d
+## SQL: 4f4c289e
 
-<pre style="background: transparent; border: none; box-shadow: none; padding: 0; white-space: pre; overflow-x: auto; font-family: monospace;">SQL Digest: 78d2b15d217ab515af03ff2b589c29cf2a1f0380fae3ca44b102e80ca2298573</pre>
-
-### SQL Statement
-
-```sql
-select c_nationkey, c_name, c_custkey from customer where c_nationkey = 23 and c_acctbal = 1033597 limit 10
-```
-
-<a id="index-advice-78d2b15d217ab515af03ff2b589c29cf2a1f0380fae3ca44b102e80ca2298573-1"></a>
-
-### Advice
-
-#### Create Index Statement
-
-```sql
-CREATE INDEX idx_c_acctbal_c_nationkey ON customer(c_acctbal,c_nationkey);
-```
-
-#### Old Plan
-
-<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                            estRows  estCost      task          access object   operator info
-Projection_7                  1.00     6521776.71   root                          test.customer.c_nationkey, test.customer.c_name, test.customer.c_custkey
-└─Limit_12                    1.00     6521776.41   root                          offset:0, count:10
-  └─TableReader_29            1.00     6521776.41   root                          MppVersion: 3, data:ExchangeSender_28
-    └─ExchangeSender_28       1.00     97826397.58  mpp[tiflash]                  ExchangeType: PassThrough
-      └─Limit_27              1.00     97826397.58  mpp[tiflash]                  offset:0, count:10
-        └─Selection_26        1.00     97826397.58  mpp[tiflash]                  eq(test.customer.c_nationkey, 23)
-          └─TableFullScan_25  1.81     97826393.23  mpp[tiflash]  table:customer  pushed down filter:eq(test.customer.c_acctbal, 1033597), keep order:false</code></pre>
-
-#### New Plan
-
-```sql
--- Sql with hypo_index hint
-select /*+ hypo_index(customer, idx_c_acctbal_c_nationkey, c_acctbal,c_nationkey) */ c_nationkey, c_name, c_custkey from customer where c_nationkey = 23 and c_acctbal = 1033597 limit 10
-```
-
-<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                              estRows  estCost  task       access object                                                            operator info
-Projection_7                    1.00     1182.50  root                                                                                test.customer.c_nationkey, test.customer.c_name, test.customer.c_custkey
-└─Projection_18                 1.00     1182.20  root                                                                                test.customer.c_custkey, test.customer.c_name, test.customer.c_nationkey
-  └─IndexLookUp_17              1.00     1181.90  root                                                                                limit embedded(offset:0, count:10)
-    ├─Limit_16(Build)           1.00     257.30   cop[tikv]                                                                           offset:0, count:10
-    │ └─IndexRangeScan_14       1.00     257.30   cop[tikv]  table:customer, index:idx_c_acctbal_c_nationkey(c_acctbal, c_nationkey)  range:[1033597.00 23,1033597.00 23], keep order:false
-    └─TableRowIDScan_15(Probe)  1.00     330.86   cop[tikv]  table:customer                                                           keep order:false</code></pre>
-
-<a id="sql-e9572eabc1d81a0065a61aa08a38b91fa60045d08bd3758f1c69d6c0fc7c8a2b"></a>
-
-## SQL: e9572eab
-
-<pre style="background: transparent; border: none; box-shadow: none; padding: 0; white-space: pre; overflow-x: auto; font-family: monospace;">SQL Digest: e9572eabc1d81a0065a61aa08a38b91fa60045d08bd3758f1c69d6c0fc7c8a2b</pre>
+<pre style="background: transparent; border: none; box-shadow: none; padding: 0; white-space: pre; overflow-x: auto; font-family: monospace;">SQL Digest: 4f4c289e935f25297eae7382ead734c31ddefa109a21248129d622d9ec14a852</pre>
 
 ### SQL Statement
 
 ```sql
-select count(*) from orders where o_clerk = 'Clerk#000003519'
+SELECT count(*) FROM test_left JOIN test_right ON test_left.a = test_right.a WHERE test_left.b = 1
 ```
 
-<a id="index-advice-e9572eabc1d81a0065a61aa08a38b91fa60045d08bd3758f1c69d6c0fc7c8a2b-1"></a>
+<a id="index-advice-4f4c289e935f25297eae7382ead734c31ddefa109a21248129d622d9ec14a852-1"></a>
 
 ### Advice
 
 #### Create Index Statement
 
 ```sql
-CREATE INDEX idx_o_clerk ON orders(o_clerk);
+CREATE INDEX idx_b_a ON test_left(b,a);
 ```
 
 #### Old Plan
 
-<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                          estRows      estCost       task          access object  operator info
-HashAgg_27                  1.00         52569425.39   root                         funcs:count(Column#13)-&gt;Column#11
-└─TableReader_29            1.00         52567890.45   root                         MppVersion: 3, data:ExchangeSender_28
-  └─ExchangeSender_28       1.00         788518339.12  mpp[tiflash]                 ExchangeType: PassThrough
-    └─HashAgg_10            1.00         788518339.12  mpp[tiflash]                 funcs:count(1)-&gt;Column#13
-      └─Selection_26        1494.15      788516832.17  mpp[tiflash]                 eq(test.orders.o_clerk, &#34;Clerk#000003519&#34;)
-        └─TableFullScan_25  15000000.00  752516832.17  mpp[tiflash]  table:orders   keep order:false</code></pre>
+<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                         estRows    estCost      task       access object     operator info
+HashAgg_13                 1.00       7092147.02   root                         funcs:count(1)-&gt;Column#12
+└─HashJoin_17              1000.00    7070680.04   root                         inner join, equal:[eq(test.test_left.a, test.test_right.a)]
+  ├─TableReader_32(Build)  100.00     2516720.03   root                         data:Selection_31
+  │ └─Selection_31         100.00     37738128.38  cop[tikv]                    eq(test.test_left.b, 1), not(isnull(test.test_left.a))
+  │   └─TableFullScan_30   100000.00  27758128.38  cop[tikv]  table:test_left   keep order:false
+  └─TableReader_35(Probe)  100000.00  2545843.02   root                         data:Selection_34
+    └─Selection_34         100000.00  31851645.27  cop[tikv]                    not(isnull(test.test_right.a))
+      └─TableFullScan_33   100000.00  26861645.27  cop[tikv]  table:test_right  keep order:false</code></pre>
 
 #### New Plan
 
 ```sql
 -- Sql with hypo_index hint
-select /*+ hypo_index(orders, idx_o_clerk, o_clerk) */ count(*) from orders where o_clerk = 'Clerk#000003519'
+SELECT /*+ hypo_index(test_left, idx_b_a, b,a) */ count(*) FROM test_left JOIN test_right ON test_left.a = test_right.a WHERE test_left.b = 1
 ```
 
-<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                       estRows  estCost    task       access object                             operator info
-HashAgg_15               1.00     21147.43   root                                                 funcs:count(Column#12)-&gt;Column#11
-└─IndexReader_16         1.00     19612.49   root                                                 index:HashAgg_7
-  └─HashAgg_7            1.00     294155.73  cop[tikv]                                            funcs:count(1)-&gt;Column#12
-    └─IndexRangeScan_14  1494.15  262825.14  cop[tikv]  table:orders, index:idx_o_clerk(o_clerk)  range:[&#34;Clerk#000003519&#34;,&#34;Clerk#000003519&#34;], keep order:false</code></pre>
+<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                         estRows    estCost      task       access object                         operator info
+HashAgg_13                 1.00       4577628.46   root                                             funcs:count(1)-&gt;Column#12
+└─HashJoin_17              1000.00    4556161.48   root                                             inner join, equal:[eq(test.test_left.a, test.test_right.a)]
+  ├─IndexReader_31(Build)  100.00     2201.47      root                                             index:IndexRangeScan_30
+  │ └─IndexRangeScan_30    100.00     20350.00     cop[tikv]  table:test_left, index:idx_b_a(b, a)  range:[1 -inf,1 +inf], keep order:false
+  └─TableReader_37(Probe)  100000.00  2545843.02   root                                             data:Selection_36
+    └─Selection_36         100000.00  31851645.27  cop[tikv]                                        not(isnull(test.test_right.a))
+      └─TableFullScan_35   100000.00  26861645.27  cop[tikv]  table:test_right                      keep order:false</code></pre>
 
-<a id="sql-8b124dc6fbb9f51ba9799f2d6007d0f959d18f00ed15a45b93c0a0451a4a2e68"></a>
+<a id="index-advice-4f4c289e935f25297eae7382ead734c31ddefa109a21248129d622d9ec14a852-2"></a>
 
-## SQL: 8b124dc6
+### Advice
 
-<pre style="background: transparent; border: none; box-shadow: none; padding: 0; white-space: pre; overflow-x: auto; font-family: monospace;">SQL Digest: 8b124dc6fbb9f51ba9799f2d6007d0f959d18f00ed15a45b93c0a0451a4a2e68</pre>
+#### Create Index Statement
+
+```sql
+CREATE INDEX idx_a ON test_right(a);
+```
+
+#### Old Plan
+
+<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                         estRows    estCost      task       access object     operator info
+HashAgg_13                 1.00       7092147.02   root                         funcs:count(1)-&gt;Column#12
+└─HashJoin_17              1000.00    7070680.04   root                         inner join, equal:[eq(test.test_left.a, test.test_right.a)]
+  ├─TableReader_32(Build)  100.00     2516720.03   root                         data:Selection_31
+  │ └─Selection_31         100.00     37738128.38  cop[tikv]                    eq(test.test_left.b, 1), not(isnull(test.test_left.a))
+  │   └─TableFullScan_30   100000.00  27758128.38  cop[tikv]  table:test_left   keep order:false
+  └─TableReader_35(Probe)  100000.00  2545843.02   root                         data:Selection_34
+    └─Selection_34         100000.00  31851645.27  cop[tikv]                    not(isnull(test.test_right.a))
+      └─TableFullScan_33   100000.00  26861645.27  cop[tikv]  table:test_right  keep order:false</code></pre>
+
+#### New Plan
+
+```sql
+-- Sql with hypo_index hint
+SELECT /*+ hypo_index(test_right, idx_a, a) */ count(*) FROM test_left JOIN test_right ON test_left.a = test_right.a WHERE test_left.b = 1
+```
+
+<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                         estRows    estCost      task       access object                     operator info
+HashAgg_13                 1.00       2591323.47   root                                         funcs:count(1)-&gt;Column#12
+└─IndexHashJoin_23         1000.00    2569856.49   root                                         inner join, inner:IndexReader_35, outer key:test.test_left.a, inner key:test.test_right.a, equal cond:eq(test.test_left.a, test.test_right.a)
+  ├─TableReader_32(Build)  100.00     2516720.03   root                                         data:Selection_31
+  │ └─Selection_31         100.00     37738128.38  cop[tikv]                                    eq(test.test_left.b, 1), not(isnull(test.test_left.a))
+  │   └─TableFullScan_30   100000.00  27758128.38  cop[tikv]  table:test_left                   keep order:false
+  └─IndexReader_35(Probe)  1000.00    184.04       root                                         index:Selection_34
+    └─Selection_34         1000.00    2127.00      cop[tikv]                                    not(isnull(test.test_right.a))
+      └─IndexRangeScan_33  1000.00    1628.00      cop[tikv]  table:test_right, index:idx_a(a)  range: decided by [eq(test.test_right.a, test.test_left.a)], keep order:false</code></pre>
+
+<a id="sql-5c6384fbb4ac24893fc302e62303fc26ae6879537029d1819528e1ba6ef030cb"></a>
+
+## SQL: 5c6384fb
+
+<pre style="background: transparent; border: none; box-shadow: none; padding: 0; white-space: pre; overflow-x: auto; font-family: monospace;">SQL Digest: 5c6384fbb4ac24893fc302e62303fc26ae6879537029d1819528e1ba6ef030cb</pre>
 
 ### SQL Statement
 
 ```sql
-select o_clerk, o_comment from orders where o_custkey in (1051550, 22894, 775994, 32960, 446677) limit 532
+select c2 from test_table where c0 = 5 and c1 = 31387
 ```
 
-<a id="index-advice-8b124dc6fbb9f51ba9799f2d6007d0f959d18f00ed15a45b93c0a0451a4a2e68-1"></a>
+<a id="index-advice-5c6384fbb4ac24893fc302e62303fc26ae6879537029d1819528e1ba6ef030cb-1"></a>
 
 ### Advice
 
 #### Create Index Statement
 
 ```sql
-CREATE INDEX idx_o_custkey_o_clerk_o_comment ON orders(o_custkey,o_clerk,o_comment);
+CREATE INDEX idx_c1_c0_c2 ON test_table(c1,c0,c2);
 ```
 
 #### Old Plan
 
-<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                        estRows  estCost       task          access object  operator info
-Limit_12                  74.28    46432561.23   root                         offset:0, count:532
-└─TableReader_27          74.28    46432561.23   root                         MppVersion: 3, data:ExchangeSender_26
-  └─ExchangeSender_26     74.28    696472239.80  mpp[tiflash]                 ExchangeType: PassThrough
-    └─Limit_25            74.28    696472239.80  mpp[tiflash]                 offset:0, count:532
-      └─TableFullScan_24  74.28    696472239.80  mpp[tiflash]  table:orders   pushed down filter:in(test.orders.o_custkey, 1051550, 22894, 775994, 32960, 446677), keep order:false</code></pre>
+<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                     estRows    estCost       task       access object     operator info
+TableReader_11         1.00       7338668.79    root                         data:Projection_5
+└─Projection_5         1.00       110080000.10  cop[tikv]                    test.test_table.c2
+  └─Selection_10       1.00       110080000.00  cop[tikv]                    eq(test.test_table.c0, 5), eq(test.test_table.c1, 31387)
+    └─TableFullScan_9  320000.00  78144000.00   cop[tikv]  table:test_table  keep order:false</code></pre>
 
 #### New Plan
 
 ```sql
 -- Sql with hypo_index hint
-select /*+ hypo_index(orders, idx_o_custkey_o_clerk_o_comment, o_custkey,o_clerk,o_comment) */ o_clerk, o_comment from orders where o_custkey in (1051550, 22894, 775994, 32960, 446677) limit 532
+select /*+ hypo_index(test_table, idx_c1_c0_c2, c1,c0,c2) */ c2 from test_table where c0 = 5 and c1 = 31387
 ```
 
-<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                       estRows  estCost   task       access object                                                                       operator info
-Limit_9                  74.28    3277.60   root                                                                                           offset:0, count:532
-└─IndexReader_16         74.28    3277.60   root                                                                                           index:Limit_15
-  └─Limit_15             74.28    20042.42  cop[tikv]                                                                                      offset:0, count:532
-    └─IndexRangeScan_14  74.28    20042.42  cop[tikv]  table:orders, index:idx_o_custkey_o_clerk_o_comment(o_custkey, o_clerk, o_comment)  range:[22894,22894], [32960,32960], [446677,446677], [775994,775994], [1051550,1051550], keep order:false</code></pre>
+<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                    estRows  estCost  task       access object                                     operator info
+IndexReader_9         1.00     17.27    root                                                         index:Projection_5
+└─Projection_5        1.00     227.41   cop[tikv]                                                    test.test_table.c2
+  └─IndexRangeScan_8  1.00     227.31   cop[tikv]  table:test_table, index:idx_c1_c0_c2(c1, c0, c2)  range:[31387 5,31387 5], keep order:false</code></pre>
 
-<a id="sql-d2f47f5e68ed76c64f93f801d83d8ee4b855e2eacb00d0363a058ad5050aacca"></a>
+<a id="sql-0101618ec5b3a438eb8a269bad586645551b7cf4befd1a7f7d0b77559b2658e4"></a>
 
-## SQL: d2f47f5e
+## SQL: 0101618e
 
-<pre style="background: transparent; border: none; box-shadow: none; padding: 0; white-space: pre; overflow-x: auto; font-family: monospace;">SQL Digest: d2f47f5e68ed76c64f93f801d83d8ee4b855e2eacb00d0363a058ad5050aacca</pre>
+<pre style="background: transparent; border: none; box-shadow: none; padding: 0; white-space: pre; overflow-x: auto; font-family: monospace;">SQL Digest: 0101618ec5b3a438eb8a269bad586645551b7cf4befd1a7f7d0b77559b2658e4</pre>
 
 ### SQL Statement
 
 ```sql
-select O_TOTALPRICE from orders where o_totalprice=219853.63 limit 30
+select * from test_table where c2=77053
 ```
 
-<a id="index-advice-d2f47f5e68ed76c64f93f801d83d8ee4b855e2eacb00d0363a058ad5050aacca-1"></a>
+<a id="index-advice-0101618ec5b3a438eb8a269bad586645551b7cf4befd1a7f7d0b77559b2658e4-1"></a>
 
 ### Advice
 
 #### Create Index Statement
 
 ```sql
-CREATE INDEX idx_o_totalprice ON orders(o_totalprice);
+CREATE INDEX idx_c2 ON test_table(c2);
 ```
 
 #### Old Plan
 
-<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                          estRows      estCost        task          access object  operator info
-Limit_12                    1.25         67228764.21    root                         offset:0, count:30
-└─TableReader_29            1.25         67228764.21    root                         MppVersion: 3, data:ExchangeSender_28
-  └─ExchangeSender_28       1.25         1008431330.78  mpp[tiflash]                 ExchangeType: PassThrough
-    └─Limit_27              1.25         1008431330.78  mpp[tiflash]                 offset:0, count:30
-      └─Selection_26        1.25         1008431330.78  mpp[tiflash]                 eq(test.orders.o_totalprice, 219853.63)
-        └─TableFullScan_25  15000000.00  972431330.78   mpp[tiflash]  table:orders   keep order:false</code></pre>
+<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                   estRows    estCost      task       access object     operator info
+TableReader_7        33.07      6274552.34   root                         data:Selection_6
+└─Selection_6        33.07      94112000.00  cop[tikv]                    eq(test.test_table.c2, 77053)
+  └─TableFullScan_5  320000.00  78144000.00  cop[tikv]  table:test_table  keep order:false</code></pre>
 
 #### New Plan
 
 ```sql
 -- Sql with hypo_index hint
-select /*+ hypo_index(orders, idx_o_totalprice, o_totalprice) */ O_TOTALPRICE from orders where o_totalprice=219853.63 limit 30
+select /*+ hypo_index(test_table, idx_c2, c2) */ * from test_table where c2=77053
 ```
 
-<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                       estRows  estCost  task       access object                                       operator info
-Limit_9                  1.25     34.89    root                                                           offset:0, count:30
-└─IndexReader_16         1.25     34.89    root                                                           index:Limit_15
-  └─Limit_15             1.25     284.98   cop[tikv]                                                      offset:0, count:30
-    └─IndexRangeScan_14  1.25     284.98   cop[tikv]  table:orders, index:idx_o_totalprice(o_totalprice)  range:[219853.63,219853.63], keep order:false</code></pre>
+<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                         estRows  estCost   task       access object                       operator info
+IndexLookUp_7              33.07    64556.49  root                                           
+├─IndexRangeScan_5(Build)  33.07    6728.84   cop[tikv]  table:test_table, index:idx_c2(c2)  range:[77053,77053], keep order:false
+└─TableRowIDScan_6(Probe)  33.07    8074.61   cop[tikv]  table:test_table                    keep order:false</code></pre>
 
-<a id="sql-a3836a08683b6b039249fbd9dbdba3e0a48ce454539593db7944a50892510989"></a>
+<a id="sql-092ee3850c12585fd64e0a4378a52ea99f6cd0d9e5a85d026f641b7660364986"></a>
 
-## SQL: a3836a08
+## SQL: 092ee385
 
-<pre style="background: transparent; border: none; box-shadow: none; padding: 0; white-space: pre; overflow-x: auto; font-family: monospace;">SQL Digest: a3836a08683b6b039249fbd9dbdba3e0a48ce454539593db7944a50892510989</pre>
+<pre style="background: transparent; border: none; box-shadow: none; padding: 0; white-space: pre; overflow-x: auto; font-family: monospace;">SQL Digest: 092ee3850c12585fd64e0a4378a52ea99f6cd0d9e5a85d026f641b7660364986</pre>
 
 ### SQL Statement
 
 ```sql
-SELECT *
-FROM t1
-JOIN t2 ON t1.a = t2.a
-WHERE t1.b = 1
+select c1 from test_table where c0 = 5 and c2 > 6348
 ```
 
-<a id="index-advice-a3836a08683b6b039249fbd9dbdba3e0a48ce454539593db7944a50892510989-1"></a>
+<a id="index-advice-092ee3850c12585fd64e0a4378a52ea99f6cd0d9e5a85d026f641b7660364986-1"></a>
 
 ### Advice
 
 #### Create Index Statement
 
 ```sql
-CREATE INDEX idx_b ON t1(b);
+CREATE INDEX idx_c0_c2_c1 ON test_table(c0,c2,c1);
 ```
 
 #### Old Plan
 
-<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                       estRows   estCost     task       access object  operator info
-HashJoin_11              100.00    765424.20   root                      inner join, equal:[eq(test.t1.a, test.t2.a)]
-├─TableReader_26(Build)  100.00    230600.53   root                      data:Selection_25
-│ └─Selection_25         100.00    3440000.00  cop[tikv]                 eq(test.t1.b, 1), not(isnull(test.t1.a))
-│   └─TableFullScan_24   10000.00  2442000.00  cop[tikv]  table:t1       keep order:false
-└─TableReader_29(Probe)  10000.00  322786.67   root                      data:Selection_28
-  └─Selection_28         10000.00  2941000.00  cop[tikv]                 not(isnull(test.t2.a))
-    └─TableFullScan_27   10000.00  2442000.00  cop[tikv]  table:t2       keep order:false</code></pre>
+<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                     estRows    estCost       task       access object     operator info
+TableReader_11         115.58     7338911.54    root                         data:Projection_5
+└─Projection_5         115.58     110080011.53  cop[tikv]                    test.test_table.c1
+  └─Selection_10       115.58     110080000.00  cop[tikv]                    eq(test.test_table.c0, 5), gt(test.test_table.c2, 6348)
+    └─TableFullScan_9  320000.00  78144000.00   cop[tikv]  table:test_table  keep order:false</code></pre>
 
 #### New Plan
 
 ```sql
 -- Sql with hypo_index hint
-SELECT /*+ hypo_index(t1, idx_b, b) */ *
-FROM t1
-JOIN t2 ON t1.a = t2.a
-WHERE t1.b = 1
+select /*+ hypo_index(test_table, idx_c0_c2_c1, c0,c2,c1) */ c1 from test_table where c0 = 5 and c2 > 6348
 ```
 
-<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                            estRows   estCost     task       access object             operator info
-HashJoin_11                   100.00    730128.17   root                                 inner join, equal:[eq(test.t1.a, test.t2.a)]
-├─IndexLookUp_27(Build)       100.00    195304.50   root                                 
-│ ├─IndexRangeScan_24(Build)  100.00    20350.00    cop[tikv]  table:t1, index:idx_b(b)  range:[1,1], keep order:false
-│ └─Selection_26(Probe)       100.00    29410.00    cop[tikv]                            not(isnull(test.t1.a))
-│   └─TableRowIDScan_25       100.00    24420.00    cop[tikv]  table:t1                  keep order:false
-└─TableReader_30(Probe)       10000.00  322786.67   root                                 data:Selection_29
-  └─Selection_29              10000.00  2941000.00  cop[tikv]                            not(isnull(test.t2.a))
-    └─TableFullScan_28        10000.00  2442000.00  cop[tikv]  table:t2                  keep order:false</code></pre>
+<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                    estRows  estCost   task       access object                                     operator info
+IndexReader_9         115.58   1996.35   root                                                         index:Projection_5
+└─Projection_5        115.58   26283.72  cop[tikv]                                                    test.test_table.c1
+  └─IndexRangeScan_8  115.58   26272.19  cop[tikv]  table:test_table, index:idx_c0_c2_c1(c0, c2, c1)  range:(5 6348,5 +inf], keep order:false</code></pre>
 
-<a id="index-advice-a3836a08683b6b039249fbd9dbdba3e0a48ce454539593db7944a50892510989-2"></a>
+<a id="sql-092f5f2b0ee9feac853046122952c7eef4afd018a6ae04bb927a74e0cf0542d9"></a>
 
-### Advice
+## SQL: 092f5f2b
 
-#### Create Index Statement
-
-```sql
-CREATE INDEX idx_a ON t2(a);
-```
-
-#### Old Plan
-
-<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                       estRows   estCost     task       access object  operator info
-HashJoin_11              100.00    765424.20   root                      inner join, equal:[eq(test.t1.a, test.t2.a)]
-├─TableReader_26(Build)  100.00    230600.53   root                      data:Selection_25
-│ └─Selection_25         100.00    3440000.00  cop[tikv]                 eq(test.t1.b, 1), not(isnull(test.t1.a))
-│   └─TableFullScan_24   10000.00  2442000.00  cop[tikv]  table:t1       keep order:false
-└─TableReader_29(Probe)  10000.00  322786.67   root                      data:Selection_28
-  └─Selection_28         10000.00  2941000.00  cop[tikv]                 not(isnull(test.t2.a))
-    └─TableFullScan_27   10000.00  2442000.00  cop[tikv]  table:t2       keep order:false</code></pre>
-
-#### New Plan
-
-```sql
--- Sql with hypo_index hint
-SELECT /*+ hypo_index(t2, idx_a, a) */ *
-FROM t1
-JOIN t2 ON t1.a = t2.a
-WHERE t1.b = 1
-```
-
-<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                            estRows   estCost     task       access object             operator info
-IndexJoin_13                  100.00    289706.55   root                                 inner join, inner:IndexLookUp_30, outer key:test.t1.a, inner key:test.t2.a, equal cond:eq(test.t1.a, test.t2.a)
-├─TableReader_26(Build)       100.00    230600.53   root                                 data:Selection_25
-│ └─Selection_25              100.00    3440000.00  cop[tikv]                            eq(test.t1.b, 1), not(isnull(test.t1.a))
-│   └─TableFullScan_24        10000.00  2442000.00  cop[tikv]  table:t1                  keep order:false
-└─IndexLookUp_30(Probe)       100.00    1955.71     root                                 
-  ├─Selection_29(Build)       100.00    253.40      cop[tikv]                            not(isnull(test.t2.a))
-  │ └─IndexRangeScan_27       100.00    203.50      cop[tikv]  table:t2, index:idx_a(a)  range: decided by [eq(test.t2.a, test.t1.a)], keep order:false
-  └─TableRowIDScan_28(Probe)  100.00    244.20      cop[tikv]  table:t2                  keep order:false</code></pre>
-
-<a id="sql-2e3888683ade4cf13ccd94e3608c528f8fafea6102ca880fb829de2026eee6d3"></a>
-
-## SQL: 2e388868
-
-<pre style="background: transparent; border: none; box-shadow: none; padding: 0; white-space: pre; overflow-x: auto; font-family: monospace;">SQL Digest: 2e3888683ade4cf13ccd94e3608c528f8fafea6102ca880fb829de2026eee6d3</pre>
+<pre style="background: transparent; border: none; box-shadow: none; padding: 0; white-space: pre; overflow-x: auto; font-family: monospace;">SQL Digest: 092f5f2b0ee9feac853046122952c7eef4afd018a6ae04bb927a74e0cf0542d9</pre>
 
 ### SQL Statement
 
 ```sql
-select count(*) from orders where o_totalprice=219853.63 limit 30
+select c0, c2 from test_table where c1 in (31387, 44843, 26964, 46643, 33079)
 ```
 
-<a id="index-advice-2e3888683ade4cf13ccd94e3608c528f8fafea6102ca880fb829de2026eee6d3-1"></a>
+<a id="index-advice-092f5f2b0ee9feac853046122952c7eef4afd018a6ae04bb927a74e0cf0542d9-1"></a>
 
 ### Advice
 
 #### Create Index Statement
 
 ```sql
-CREATE INDEX idx_o_totalprice ON orders(o_totalprice);
+CREATE INDEX idx_c1_c0_c2 ON test_table(c1,c0,c2);
 ```
 
 #### Old Plan
 
-<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                          estRows      estCost        task          access object  operator info
-Limit_12                    1.00         67228826.77    root                         offset:0, count:30
-└─StreamAgg_19              1.00         67228826.77    root                         funcs:count(1)-&gt;Column#11
-  └─TableReader_48          1.25         67228764.21    root                         MppVersion: 3, data:ExchangeSender_47
-    └─ExchangeSender_47     1.25         1008431330.78  mpp[tiflash]                 ExchangeType: PassThrough
-      └─Selection_46        1.25         1008431330.78  mpp[tiflash]                 eq(test.orders.o_totalprice, 219853.63)
-        └─TableFullScan_45  15000000.00  972431330.78   mpp[tiflash]  table:orders   keep order:false</code></pre>
+<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                     estRows    estCost      task       access object     operator info
+TableReader_11         161.60     6274818.07   root                         data:Projection_5
+└─Projection_5         161.60     94112032.25  cop[tikv]                    test.test_table.c0, test.test_table.c2
+  └─Selection_10       161.60     94112000.00  cop[tikv]                    in(test.test_table.c1, 31387, 44843, 26964, 46643, 33079)
+    └─TableFullScan_9  320000.00  78144000.00  cop[tikv]  table:test_table  keep order:false</code></pre>
 
 #### New Plan
 
 ```sql
 -- Sql with hypo_index hint
-select /*+ hypo_index(orders, idx_o_totalprice, o_totalprice) */ count(*) from orders where o_totalprice=219853.63 limit 30
+select /*+ hypo_index(test_table, idx_c1_c0_c2, c1,c0,c2) */ c0, c2 from test_table where c1 in (31387, 44843, 26964, 46643, 33079)
 ```
 
-<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                         estRows  estCost  task       access object                                       operator info
-Limit_12                   1.00     75.18    root                                                           offset:0, count:30
-└─StreamAgg_37             1.00     75.18    root                                                           funcs:count(Column#14)-&gt;Column#11
-  └─IndexReader_38         1.00     25.28    root                                                           index:StreamAgg_18
-    └─StreamAgg_18         1.00     347.54   cop[tikv]                                                      funcs:count(1)-&gt;Column#14
-      └─IndexRangeScan_36  1.25     284.98   cop[tikv]  table:orders, index:idx_o_totalprice(o_totalprice)  range:[219853.63,219853.63], keep order:false</code></pre>
+<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                    estRows  estCost   task       access object                                     operator info
+IndexReader_9         161.60   3133.56   root                                                         index:Projection_5
+└─Projection_5        161.60   36764.62  cop[tikv]                                                    test.test_table.c0, test.test_table.c2
+  └─IndexRangeScan_8  161.60   36732.36  cop[tikv]  table:test_table, index:idx_c1_c0_c2(c1, c0, c2)  range:[26964,26964], [31387,31387], [33079,33079], [44843,44843], [46643,46643], keep order:false</code></pre>
 
-<a id="sql-a93e251b62c1f1e624e67fa5163d1e3468663f2fa5cb38a239063ac009a0a371"></a>
+<a id="sql-dd87ef62f889ebb4c4504927daf72e3ef92794032dab6a10e2e6ac621d4ff23e"></a>
 
-## SQL: a93e251b
+## SQL: dd87ef62
 
-<pre style="background: transparent; border: none; box-shadow: none; padding: 0; white-space: pre; overflow-x: auto; font-family: monospace;">SQL Digest: a93e251b62c1f1e624e67fa5163d1e3468663f2fa5cb38a239063ac009a0a371</pre>
+<pre style="background: transparent; border: none; box-shadow: none; padding: 0; white-space: pre; overflow-x: auto; font-family: monospace;">SQL Digest: dd87ef62f889ebb4c4504927daf72e3ef92794032dab6a10e2e6ac621d4ff23e</pre>
 
 ### SQL Statement
 
 ```sql
-select count(*) from orders where o_totalprice>=219853.63
+select count(*) from test_table where c1>=77641
 ```
 
-<a id="index-advice-a93e251b62c1f1e624e67fa5163d1e3468663f2fa5cb38a239063ac009a0a371-1"></a>
+<a id="index-advice-dd87ef62f889ebb4c4504927daf72e3ef92794032dab6a10e2e6ac621d4ff23e-1"></a>
 
 ### Advice
 
 #### Create Index Statement
 
 ```sql
-CREATE INDEX idx_o_totalprice ON orders(o_totalprice);
+CREATE INDEX idx_c1 ON test_table(c1);
 ```
 
 #### Old Plan
 
-<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                          estRows      estCost        task          access object  operator info
-HashAgg_27                  1.00         67456764.23    root                         funcs:count(Column#13)-&gt;Column#11
-└─TableReader_29            1.00         67455229.29    root                         MppVersion: 3, data:ExchangeSender_28
-  └─ExchangeSender_28       1.00         1011828421.72  mpp[tiflash]                 ExchangeType: PassThrough
-    └─HashAgg_10            1.00         1011828421.72  mpp[tiflash]                 funcs:count(1)-&gt;Column#13
-      └─Selection_26        3538560.81   1008431330.78  mpp[tiflash]                 ge(test.orders.o_totalprice, 219853.63)
-        └─TableFullScan_25  15000000.00  972431330.78   mpp[tiflash]  table:orders   keep order:false</code></pre>
+<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                        estRows    estCost      task       access object     operator info
+HashAgg_13                1.00       6305143.53   root                         funcs:count(Column#7)-&gt;Column#6
+└─TableReader_14          1.00       6303608.59   root                         data:HashAgg_6
+  └─HashAgg_6             1.00       94554097.11  cop[tikv]                    funcs:count(1)-&gt;Column#7
+    └─Selection_12        22073.64   94112000.00  cop[tikv]                    ge(test.test_table.c1, 77641)
+      └─TableFullScan_11  320000.00  78144000.00  cop[tikv]  table:test_table  keep order:false</code></pre>
 
 #### New Plan
 
 ```sql
 -- Sql with hypo_index hint
-select /*+ hypo_index(orders, idx_o_totalprice, o_totalprice) */ count(*) from orders where o_totalprice>=219853.63
+select /*+ hypo_index(test_table, idx_c1, c1) */ count(*) from test_table where c1>=77641
 ```
 
-<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                       estRows     estCost       task       access object                                       operator info
-HashAgg_15               1.00        58333155.05   root                                                           funcs:count(Column#12)-&gt;Column#11
-└─IndexReader_16         1.00        58331620.11   root                                                           index:HashAgg_7
-  └─HashAgg_7            1.00        874974269.96  cop[tikv]                                                      funcs:count(1)-&gt;Column#12
-    └─IndexRangeScan_14  3538560.81  804343088.80  cop[tikv]  table:orders, index:idx_o_totalprice(o_totalprice)  range:[219853.63,+inf], keep order:false</code></pre>
-
-<a id="sql-4d49791f77e4b9bc1298a0437c7ff2f9af38f84db4cea0cb3aa3dcbfb125b529"></a>
-
-## SQL: 4d49791f
-
-<pre style="background: transparent; border: none; box-shadow: none; padding: 0; white-space: pre; overflow-x: auto; font-family: monospace;">SQL Digest: 4d49791f77e4b9bc1298a0437c7ff2f9af38f84db4cea0cb3aa3dcbfb125b529</pre>
-
-### SQL Statement
-
-```sql
-select count(*) from orders where o_custkey = 861145
-```
-
-<a id="index-advice-4d49791f77e4b9bc1298a0437c7ff2f9af38f84db4cea0cb3aa3dcbfb125b529-1"></a>
-
-### Advice
-
-#### Create Index Statement
-
-```sql
-CREATE INDEX idx_o_custkey ON orders(o_custkey);
-```
-
-#### Old Plan
-
-<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                        estRows      estCost       task          access object  operator info
-StreamAgg_12              1.00         48831709.53   root                         funcs:count(1)-&gt;Column#11
-└─TableReader_41          14.86        48830968.20   root                         MppVersion: 3, data:ExchangeSender_40
-  └─ExchangeSender_40     14.86        732464000.00  mpp[tiflash]                 ExchangeType: PassThrough
-    └─Selection_39        14.86        732464000.00  mpp[tiflash]                 eq(test.orders.o_custkey, 861145)
-      └─TableFullScan_38  15000000.00  696464000.00  mpp[tiflash]  table:orders   keep order:false</code></pre>
-
-#### New Plan
-
-```sql
--- Sql with hypo_index hint
-select /*+ hypo_index(orders, idx_o_custkey, o_custkey) */ count(*) from orders where o_custkey = 861145
-```
-
-<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                       estRows  estCost  task       access object                                 operator info
-StreamAgg_30             1.00     262.68   root                                                     funcs:count(Column#14)-&gt;Column#11
-└─IndexReader_31         1.00     212.78   root                                                     index:StreamAgg_11
-  └─StreamAgg_11         1.00     3159.96  cop[tikv]                                                funcs:count(1)-&gt;Column#14
-    └─IndexRangeScan_29  14.86    2418.63  cop[tikv]  table:orders, index:idx_o_custkey(o_custkey)  range:[861145,861145], keep order:false</code></pre>
+<pre style="white-space: pre; overflow-x: auto; max-width: 100%;"><code style="white-space: pre; overflow-wrap: normal; word-break: normal;">id                       estRows   estCost     task       access object                       operator info
+HashAgg_12               1.00      270582.74   root                                           funcs:count(Column#7)-&gt;Column#6
+└─IndexReader_13         1.00      269047.80   root                                           index:HashAgg_6
+  └─HashAgg_6            1.00      4035685.34  cop[tikv]                                      funcs:count(1)-&gt;Column#7
+    └─IndexRangeScan_11  22073.64  3593588.23  cop[tikv]  table:test_table, index:idx_c1(c1)  range:[77641,+inf], keep order:false</code></pre>
