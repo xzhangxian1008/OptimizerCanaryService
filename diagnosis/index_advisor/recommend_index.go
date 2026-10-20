@@ -123,6 +123,7 @@ func (r *SQLRecommendIndexRepository) RecommendIndex(ctx context.Context) ([]Rec
 		if err := rows.Scan(&sample.Schema, &sample.Digest, &sample.SQL, &sample.Plan, &sample.ExecCount, &sample.ExecTime, &sample.AvgMem, &sample.AvgRequestUnitRead); err != nil {
 			return nil, fmt.Errorf("scan SELECT statement: %w", err)
 		}
+
 		// TODO: detect truncated query_sample_text and recover or otherwise
 		// handle the complete SQL before sending it to the index advisor.
 		if strings.TrimSpace(sample.SQL) != "" {
@@ -135,15 +136,20 @@ func (r *SQLRecommendIndexRepository) RecommendIndex(ctx context.Context) ([]Rec
 				zap.Uint64("exec_time", sample.ExecTime))
 		}
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("read SELECT statements: %w", err)
 	}
+
 	samples := aggregateAndSortSamples(rawSamples)
 
 	results := make([]RecommendIndexResult, 0, recommendIndexMaxResults)
 	for _, sample := range samples {
 		recommendations, err := r.recommendFor(ctx, sample.Sample)
 		if err != nil {
+			// TODO `RECOMMEND INDEX RETURN RESULT FOR 'xxxx'`` may encounter syntax error,
+			// because the sql xxxx may also include `'` character. We ignore this error and
+			// fix it in the furure.
 			if isSQLSyntaxError(err) {
 				r.logger.Warn("skip SQL with syntax error during index recommendation",
 					zap.String("digest", sample.Digest),
@@ -151,6 +157,8 @@ func (r *SQLRecommendIndexRepository) RecommendIndex(ctx context.Context) ([]Rec
 					zap.Error(err))
 				continue
 			}
+
+			// Select for system table will be rejected by index advisor, this is expected behaviour
 			if isEmptyQuerySetError(err) {
 				r.logger.Debug("skip SQL rejected by index advisor",
 					zap.String("schema", sample.Schema),
@@ -160,10 +168,12 @@ func (r *SQLRecommendIndexRepository) RecommendIndex(ctx context.Context) ([]Rec
 			}
 			return nil, err
 		}
+
 		if len(recommendations) == 0 {
 			continue
 		}
-		oldPlan, err := r.explain(ctx, sample.Sample, recommendableStatement(sample.SQL))
+
+		oldPlan, err := r.getSQLPlan(ctx, sample.Sample, convertToRecommendableStatement(sample.SQL))
 		if err != nil {
 			if isSQLSyntaxError(err) {
 				r.logger.Warn("skip SQL with syntax error during original EXPLAIN", zap.String("digest", sample.Digest), zap.String("query_sample_text", sample.SQL), zap.Error(err))
@@ -171,13 +181,15 @@ func (r *SQLRecommendIndexRepository) RecommendIndex(ctx context.Context) ([]Rec
 			}
 			return nil, err
 		}
+
 		var completed []IndexRecommendation
 		for _, advice := range recommendations {
 			hintedSQL, err := buildHypoIndexSQL(sample.SQL, []IndexRecommendation{advice})
 			if err != nil {
 				return nil, fmt.Errorf("build hypothetical index SQL: %w", err)
 			}
-			newPlan, err := r.explain(ctx, sample.Sample, hintedSQL)
+
+			newPlan, err := r.getSQLPlan(ctx, sample.Sample, hintedSQL)
 			if err != nil {
 				if isSQLSyntaxError(err) {
 					r.logger.Warn("skip advice with syntax error during hypothetical index EXPLAIN", zap.String("digest", sample.Digest), zap.String("query_sample_text", sample.SQL), zap.Error(err))
@@ -185,13 +197,16 @@ func (r *SQLRecommendIndexRepository) RecommendIndex(ctx context.Context) ([]Rec
 				}
 				return nil, err
 			}
+
 			// TODO: compare oldPlan and newPlan; skip advice if the plans are equal.
 			advice.newSQL, advice.newPlan = hintedSQL, newPlan
 			completed = append(completed, advice)
 		}
+
 		if len(completed) == 0 {
 			continue
 		}
+
 		results = append(results, RecommendIndexResult{
 			Schema:             sample.Schema,
 			Digest:             sample.Digest,
@@ -227,6 +242,7 @@ func aggregateAndSortSamples(rawSamples []recommendIndexSample) []recommendIndex
 				existing.AvgMem = (existing.AvgMem*float64(existing.ExecCount) + sample.AvgMem*float64(sample.ExecCount)) / float64(totalCount)
 				existing.AvgRequestUnitRead = (existing.AvgRequestUnitRead*float64(existing.ExecCount) + sample.AvgRequestUnitRead*float64(sample.ExecCount)) / float64(totalCount)
 			}
+
 			existing.ExecCount = totalCount
 			existing.ExecTime += sample.ExecTime
 			byKey[key] = existing
@@ -234,10 +250,12 @@ func aggregateAndSortSamples(rawSamples []recommendIndexSample) []recommendIndex
 			byKey[key] = sample
 		}
 	}
+
 	samples := make([]recommendIndexSample, 0, len(byKey))
 	for _, sample := range byKey {
 		samples = append(samples, sample)
 	}
+
 	sort.SliceStable(samples, func(i, j int) bool {
 		if samples[i].ExecTime != samples[j].ExecTime {
 			return samples[i].ExecTime > samples[j].ExecTime
@@ -277,7 +295,7 @@ func (r *SQLRecommendIndexRepository) recommendFor(ctx context.Context, sample S
 		}
 	}
 
-	statement := recommendableStatement(sample.SQL)
+	statement := convertToRecommendableStatement(sample.SQL)
 	recommendSQL := "RECOMMEND INDEX RUN FOR '" + strings.ReplaceAll(statement, "'", "''") + "'"
 	r.logger.Info("execute SQL", zap.String("schema", sample.Schema), zap.String("sql", recommendSQL))
 	rows, err := conn.QueryContext(recommendCtx, recommendSQL)
@@ -341,30 +359,37 @@ func recommendCellString(cell any) string {
 	return strings.TrimSpace(fmt.Sprint(cell))
 }
 
-func (r *SQLRecommendIndexRepository) explain(ctx context.Context, sample Sample, statement string) (string, error) {
+func (r *SQLRecommendIndexRepository) getSQLPlan(ctx context.Context, sample Sample, statement string) (string, error) {
 	explainCtx, cancel := context.WithTimeout(ctx, recommendIndexQueryTimeout)
 	defer cancel()
+
 	conn, err := r.db.Conn(explainCtx)
 	if err != nil {
 		return "", fmt.Errorf("acquire connection for EXPLAIN: %w", err)
 	}
+
 	defer conn.Close()
+
 	if sample.Schema != "" {
 		quoted := "`" + strings.ReplaceAll(sample.Schema, "`", "``") + "`"
 		if _, err := conn.ExecContext(explainCtx, "USE "+quoted); err != nil {
 			return "", fmt.Errorf("select schema %q for EXPLAIN: %w", sample.Schema, err)
 		}
 	}
+
 	explainSQL := "EXPLAIN FORMAT='verbose' " + strings.TrimSuffix(strings.TrimSpace(statement), ";")
 	rows, err := conn.QueryContext(explainCtx, explainSQL)
 	if err != nil {
 		return "", fmt.Errorf("explain statement: %w", err)
 	}
+
 	defer rows.Close()
+
 	columns, err := rows.Columns()
 	if err != nil {
 		return "", fmt.Errorf("read EXPLAIN columns: %w", err)
 	}
+
 	var out strings.Builder
 	out.WriteString(strings.Join(columns, "\t"))
 	out.WriteByte('\n')
@@ -385,6 +410,7 @@ func (r *SQLRecommendIndexRepository) explain(ctx context.Context, sample Sample
 		}
 		out.WriteByte('\n')
 	}
+
 	if err := rows.Err(); err != nil {
 		return "", fmt.Errorf("read EXPLAIN result: %w", err)
 	}
@@ -400,15 +426,15 @@ func buildHypoIndexSQL(statement string, recommendations []IndexRecommendation) 
 		hints = append(hints, fmt.Sprintf("hypo_index(%s, %s, %s)", advice.Table, advice.Name, advice.Columns))
 	}
 	if len(hints) == 0 {
-		return recommendableStatement(statement), nil
+		return convertToRecommendableStatement(statement), nil
 	}
-	return compare.AddOptimizerHint(recommendableStatement(statement), strings.Join(hints, " "))
+	return compare.AddOptimizerHint(convertToRecommendableStatement(statement), strings.Join(hints, " "))
 }
 
 // query_sample_text can contain TiDB's server-side prepared statement suffix,
 // for example "SELECT ... [arguments: 1]". That suffix is metadata rather
 // than SQL and must be removed before the statement is sent to TiDB again.
-func recommendableStatement(statement string) string {
+func convertToRecommendableStatement(statement string) string {
 	statement = strings.TrimSpace(statement)
 	if markerIndex := strings.LastIndex(statement, "[arguments:"); markerIndex > 0 && strings.TrimSpace(statement[:markerIndex]) != "" {
 		if strings.HasSuffix(strings.TrimSpace(statement), "]") {
