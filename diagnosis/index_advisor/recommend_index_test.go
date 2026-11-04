@@ -1,23 +1,113 @@
 package index_advisor
 
 import (
+	"context"
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/go-sql-driver/mysql"
+	"go.uber.org/zap"
 )
 
 func TestAggregateWeightedMetrics(t *testing.T) {
 	rows := []recommendIndexSample{
-		{Sample: Sample{SQL: "select 1"}, Digest: "a", ExecCount: 2, ExecTime: 10, AvgMem: 100, AvgRequestUnitRead: 1},
-		{Sample: Sample{SQL: "select 1"}, Digest: "a", ExecCount: 6, ExecTime: 20, AvgMem: 300, AvgRequestUnitRead: 3},
+		{Sample: Sample{Schema: "app", SQL: "select 1"}, Digest: "a", ExecCount: 2, ExecTime: 10, AvgMem: 100, AvgRequestUnitRead: 1, LastSeen: "2026-01-01 01:00:00"},
+		{Sample: Sample{Schema: "app", SQL: "select 3"}, Digest: "a", ExecCount: 6, ExecTime: 20, AvgMem: 300, AvgRequestUnitRead: 3, LastSeen: "2026-01-01 02:00:00"},
 		{Sample: Sample{SQL: "select 2"}, Digest: "b", ExecCount: 1, ExecTime: 100},
+		{Sample: Sample{Schema: "other", SQL: "select 1"}, Digest: "a", ExecCount: 1, ExecTime: 1},
 	}
 	got := aggregateAndSortSamples(rows)
-	if len(got) != 2 || got[0].Digest != "b" {
+	if len(got) != 3 || got[0].Digest != "b" {
 		t.Fatalf("unexpected order: %+v", got)
 	}
 	a := got[1]
-	if a.ExecCount != 8 || a.ExecTime != 30 || a.AvgMem != 250 || a.AvgRequestUnitRead != 2.5 {
+	if a.ExecCount != 8 || a.ExecTime != 30 || a.AvgMem != 250 || a.AvgRequestUnitRead != 2.5 || a.SQL != "select 3" {
 		t.Fatalf("unexpected aggregation: %+v", a)
+	}
+}
+
+func TestHasOnlyUserTables(t *testing.T) {
+	for _, tc := range []struct {
+		tables string
+		want   bool
+	}{
+		{"app.orders,other.customers", true},
+		{"app.orders,INFORMATION_SCHEMA.tables", false},
+		{"mysql.user", false},
+		{"performance_schema.events_statements_current", false},
+		{"metrics_schema.tidb_query", false},
+		{"inspection_schema.cluster_info", false},
+		{"sys.metrics", false},
+		{"", false},
+		{"table_without_schema", false},
+	} {
+		if got := hasOnlyUserTables(tc.tables); got != tc.want {
+			t.Errorf("hasOnlyUserTables(%q) = %v, want %v", tc.tables, got, tc.want)
+		}
+	}
+}
+
+func TestMergeSummaryWindowsUsesCompleteHistory(t *testing.T) {
+	current := []recommendIndexSample{
+		{Instance: "tidb-1", WindowStart: "10:00", ExecCount: 2},
+		{Instance: "tidb-2", WindowStart: "10:00", ExecCount: 3},
+	}
+	history := []recommendIndexSample{
+		{Instance: "tidb-1", WindowStart: "10:00", ExecCount: 4},
+		{Instance: "tidb-1", WindowStart: "10:00", ExecCount: 5},
+		{Instance: "tidb-1", WindowStart: "09:30", ExecCount: 6},
+	}
+	got := mergeSummaryWindows(current, history)
+	if len(got) != 4 || got[0].ExecCount != 4 || got[1].ExecCount != 5 || got[2].ExecCount != 6 || got[3].ExecCount != 3 {
+		t.Fatalf("unexpected windows: %+v", got)
+	}
+}
+
+type fakeRecommendationRunner struct {
+	calls    []string
+	failures map[string]error
+}
+
+func (r *fakeRecommendationRunner) recommendFor(_ context.Context, sample Sample) ([]IndexRecommendation, error) {
+	r.calls = append(r.calls, sample.SQL)
+	if err := r.failures[sample.SQL]; err != nil {
+		return nil, err
+	}
+	if len(r.calls) <= 2 {
+		return nil, nil
+	}
+	return []IndexRecommendation{{}}, nil
+}
+
+func TestRecommendSamplesSkipsMissingObjects(t *testing.T) {
+	runner := &fakeRecommendationRunner{failures: map[string]error{
+		"missing": fmt.Errorf("select schema: %w", &mysql.MySQLError{Number: 1049}),
+	}}
+	samples := []recommendIndexSample{
+		{Sample: Sample{SQL: "missing"}},
+		{Sample: Sample{SQL: "no advice"}},
+		{Sample: Sample{SQL: "valid"}},
+	}
+	results, err := recommendSamples(context.Background(), samples, runner, zap.NewNop())
+	if err != nil || len(results) != 1 || results[0].SQL != "valid" {
+		t.Fatalf("results=%+v calls=%v err=%v", results, runner.calls, err)
+	}
+}
+
+func (*fakeRecommendationRunner) getSQLPlan(context.Context, Sample, string) (string, error) {
+	return "plan", nil
+}
+
+func TestRecommendSamplesStopsAfterTwentySQLsWithAdvice(t *testing.T) {
+	var samples []recommendIndexSample
+	for i := 0; i < 30; i++ {
+		samples = append(samples, recommendIndexSample{Sample: Sample{SQL: fmt.Sprintf("SELECT %d", i)}})
+	}
+	runner := &fakeRecommendationRunner{}
+	results, err := recommendSamples(context.Background(), samples, runner, zap.NewNop())
+	if err != nil || len(results) != 20 || len(runner.calls) != 22 || runner.calls[21] != "SELECT 21" {
+		t.Fatalf("results=%d calls=%v err=%v", len(results), runner.calls, err)
 	}
 }
 
@@ -86,12 +176,25 @@ func TestMultipleAdviceRowsAndSections(t *testing.T) {
 	if strings.Index(report, "<td>first</td>") > strings.Index(report, "<td>second</td>") {
 		t.Fatal("advice order changed")
 	}
-	for _, want := range []string{"#index-advice-abcdef123-1", "#index-advice-abcdef123-2", "CREATE INDEX first", "CREATE INDEX second"} {
+	for _, want := range []string{"#index-advice-abcdef123-74657374-1", "#index-advice-abcdef123-74657374-2", "CREATE INDEX first", "CREATE INDEX second"} {
 		if !strings.Contains(report, want) {
 			t.Fatalf("missing %q", want)
 		}
 	}
 	if strings.Contains(report, "Schema:") {
 		t.Fatal("schema line retained")
+	}
+}
+
+func TestReportAnchorsDistinguishSchemas(t *testing.T) {
+	results := []RecommendIndexResult{
+		{Schema: "db1", Digest: "abcd", Recommendations: []IndexRecommendation{{}}},
+		{Schema: "db2", Digest: "abcd", Recommendations: []IndexRecommendation{{}}},
+	}
+	report := RenderRecommendIndex(results)
+	for _, want := range []string{"href=\"#sql-abcd-646231\"", "id=\"sql-abcd-646231\"", "href=\"#sql-abcd-646232\"", "id=\"sql-abcd-646232\""} {
+		if !strings.Contains(report, want) {
+			t.Fatalf("missing anchor %q", want)
+		}
 	}
 }

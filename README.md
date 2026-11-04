@@ -77,10 +77,17 @@ curl -sS -OJ http://127.0.0.1:8080/compare
 ### `GET /recommend-index`
 
 After a TiDB connection has been configured, this endpoint selects `SELECT`
-statements from `information_schema.cluster_statements_summary`, ordered by
-`sum_latency` descending. It evaluates them in that order until it has collected
-up to 30 statements with non-empty index recommendations. Invalid statements
-and statements without recommendations are skipped:
+statements from `information_schema.cluster_statements_summary` and the last
+24 hours of `cluster_statements_summary_history`. It excludes samples without a
+user or user-table metadata, and samples that reference system schemas. TiDB's
+summary tables do not expose an internal-statement flag, so a sample user is
+only a best-effort filter for internal statements. It aggregates execution
+counts and latency by schema and digest, then evaluates SQL in descending total
+latency order until it has collected up to 20 statements with non-empty index
+recommendations. Invalid statements and statements without recommendations are
+skipped. Historical statistics cover complete summary windows, so the 24-hour
+boundary is approximate; history may also be incomplete due to retention or
+eviction. A failed summary query fails the request:
 
 ```bash
 curl -sS -OJ http://127.0.0.1:8080/recommend-index
