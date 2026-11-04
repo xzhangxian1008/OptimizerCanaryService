@@ -68,7 +68,7 @@ func (m *ConnectionManager) Replace(ctx context.Context, dsn string) ConnectionS
 		_ = oldDB.Close()
 	}
 	status.Connected = true
-	m.logger.Info("TiDB connection replaced", zap.String("dsn", dsn))
+	m.logger.Info("TiDB connection replaced")
 	return status
 }
 

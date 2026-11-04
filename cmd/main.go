@@ -30,12 +30,14 @@ func main() {
 	}
 	defer func() { _ = logger.Sync() }()
 
-	mode := flag.String("mode", "service", "startup mode: service or prepare")
+	mode := flag.String("mode", "service", "startup mode: service, job, or prepare")
 	httpAddress := flag.String("http-addr", "", "HTTP listen address in host:port form (service mode)")
 	prepareOptions := registerPrepareFlags(flag.CommandLine)
+	jobOptions := registerJobFlags(flag.CommandLine)
 	flag.Usage = func() {
 		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "usage:\n")
 		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "  %s [-mode service] -http-addr <host:port>\n", os.Args[0])
+		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "  %s -mode job -job-type <compare|recommend-index> -job-output <path>\n", os.Args[0])
 		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "  %s -mode prepare -dsn <TiDB DSN> [-prepare-schema <schema>] [-prepare-concurrency <n>] [-prepare-duration <duration>]\n", os.Args[0])
 		flag.PrintDefaults()
 	}
@@ -48,6 +50,12 @@ func main() {
 	defer stop()
 
 	switch *mode {
+	case "job":
+		if err := runJob(shutdownCtx, *jobOptions, logger); err != nil {
+			logger.Error("diagnostic job failed", zap.Error(err))
+			os.Exit(1)
+		}
+		return
 	case "prepare":
 		if err := runPrepare(shutdownCtx, *prepareOptions, logger); err != nil {
 			logger.Error("prepare TiDB test data", zap.Error(err))

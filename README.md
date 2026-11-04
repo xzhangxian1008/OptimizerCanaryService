@@ -122,6 +122,30 @@ connection unchanged.
 
 ## Run
 
+### One-shot diagnosis job
+
+Job mode connects to TiDB, runs one diagnosis, writes its Markdown report to a
+new local file, and exits. It does not start an HTTP server. Supply the DSN via
+the environment rather than a command-line argument:
+
+```bash
+export DIAGNOSTIC_TIDB_DSN='diagnostic_user@unix(/shared/tidb.sock)/'
+go run ./cmd -mode job -job-type compare -job-output /tmp/compare-report.md -job-timeout 5m
+```
+
+`-job-type` accepts `compare` or `recommend-index`. `-job-output` is required
+and must not already exist. The report is created with permissions `0600`.
+`-job-timeout` is optional; its default is `0` (no overall deadline). SIGINT
+and SIGTERM cancel the job. A connection, diagnosis, or file error causes a
+non-zero exit status.
+
+Reports and existing diagnostic logs can contain unredacted SQL and other
+sensitive data. This mode writes only to a local file; it does not yet redact
+or upload reports to S3, and it does not wait for TiDB to become ready. Use it
+only where those outputs are protected.
+
+### HTTP service
+
 The default `service` mode starts the HTTP server. Pass the HTTP listen address
 as a named command-line argument:
 
