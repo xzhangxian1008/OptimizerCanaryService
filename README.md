@@ -125,14 +125,15 @@ connection unchanged.
 ### One-shot diagnosis job
 
 Job mode connects to TiDB, runs one diagnosis, writes its Markdown report to a
-new local file, and exits. It does not start an HTTP server. Supply the DSN via
-the environment rather than a command-line argument:
+new local file, and exits. It does not start an HTTP server:
 
 ```bash
-export DIAGNOSTIC_TIDB_DSN='diagnostic_user@unix(/shared/tidb.sock)/'
-go run ./cmd -mode job -job-type compare -job-output /tmp/compare-report.md -job-timeout 5m
+go run ./cmd -mode job -dsn 'root@tcp(127.0.0.1:4000)/' \
+  -job-type compare -job-output /tmp/compare-report.md -job-timeout 5m
 ```
 
+`-dsn` is required and may specify a TCP address or Unix socket. A password in
+the DSN may be exposed in process arguments and shell history.
 `-job-type` accepts `compare` or `recommend-index`. `-job-output` is required
 and must not already exist. The report is created with permissions `0600`.
 `-job-timeout` is optional; its default is `0` (no overall deadline). SIGINT

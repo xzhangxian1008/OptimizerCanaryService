@@ -15,6 +15,7 @@ import (
 )
 
 type jobOptions struct {
+	dsn            string
 	diagnosticType string
 	output         string
 	timeout        time.Duration
@@ -43,9 +44,8 @@ func runJob(ctx context.Context, options jobOptions, logger *zap.Logger) error {
 	if options.timeout < 0 {
 		return errors.New("job-timeout must not be negative")
 	}
-	dsn := os.Getenv("DIAGNOSTIC_TIDB_DSN")
-	if strings.TrimSpace(dsn) == "" {
-		return errors.New("DIAGNOSTIC_TIDB_DSN must not be empty")
+	if strings.TrimSpace(options.dsn) == "" {
+		return errors.New("dsn must not be empty")
 	}
 	if options.timeout > 0 {
 		var cancel context.CancelFunc
@@ -55,7 +55,7 @@ func runJob(ctx context.Context, options jobOptions, logger *zap.Logger) error {
 
 	connections := diagnosis.NewConnectionManager(logger)
 	defer connections.Close()
-	result := connections.Replace(ctx, dsn)
+	result := connections.Replace(ctx, options.dsn)
 	if result.Err != nil {
 		return fmt.Errorf("connect to diagnostic TiDB: %w", result.Err)
 	}

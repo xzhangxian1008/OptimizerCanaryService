@@ -9,11 +9,23 @@ import (
 	"testing"
 
 	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis/index_advisor"
+	"go.uber.org/zap"
 )
 
 type fakeJobDiagnostics struct {
 	called string
 	err    error
+}
+
+func TestRunJobRequiresDSNArgument(t *testing.T) {
+	t.Setenv("DIAGNOSTIC_TIDB_DSN", "root@tcp(127.0.0.1:4000)/")
+	err := runJob(context.Background(), jobOptions{
+		diagnosticType: "compare",
+		output:         filepath.Join(t.TempDir(), "report.md"),
+	}, zap.NewNop())
+	if err == nil || err.Error() != "dsn must not be empty" {
+		t.Fatalf("expected missing DSN error, got %v", err)
+	}
 }
 
 func (f *fakeJobDiagnostics) Compare(context.Context) (string, error) {

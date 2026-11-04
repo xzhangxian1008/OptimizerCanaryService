@@ -18,7 +18,6 @@ type prepareOptions struct {
 
 func registerPrepareFlags(flags *flag.FlagSet) *prepareOptions {
 	options := &prepareOptions{}
-	flags.StringVar(&options.dsn, "dsn", "", "TiDB DSN (prepare mode)")
 	flags.StringVar(&options.schema, "prepare-schema", prepare.DefaultSchema, "schema for the compact TPC-C fixture")
 	flags.IntVar(&options.concurrency, "prepare-concurrency", prepare.DefaultConcurrency, "number of concurrent prepare workload workers")
 	flags.DurationVar(&options.duration, "prepare-duration", prepare.DefaultDuration, "duration of the concurrent prepare workload")
