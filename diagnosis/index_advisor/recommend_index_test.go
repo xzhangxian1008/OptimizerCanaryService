@@ -116,7 +116,7 @@ func TestPlanIndentationAndOverview(t *testing.T) {
 	if got := planCellString([]byte(line)); got != line {
 		t.Fatalf("indentation lost: %q", got)
 	}
-	report := RenderRecommendIndex([]RecommendIndexResult{{Digest: "abcdefgh123", AvgMem: 250, AvgRequestUnitRead: 2.5, Recommendations: []IndexRecommendation{{newPlan: line}}}})
+	report := RenderRecommendIndex([]RecommendIndexResult{{Digest: "abcdefgh123", AvgMem: 250, AvgRequestUnitRead: 2.5, Recommendations: []IndexRecommendation{{newPlan: "id\ttask\n" + line + "\troot"}}}})
 	for _, want := range []string{"# Index Recommendation Overview", "<th>Count</th><th>Database</th><th>Table</th><th>Est Cost Change</th>", "# Recommendation List", line} {
 		if !strings.Contains(report, want) {
 			t.Fatalf("missing %q", want)
@@ -149,7 +149,7 @@ func TestPlanBlockPreservesTextAndEscapesHTML(t *testing.T) {
 
 func TestReportCostChangeAndCreateStatement(t *testing.T) {
 	report := RenderRecommendIndex([]RecommendIndexResult{{Digest: "abc", OldPlan: "id\testCost\nRoot_1\t123.45\n  Child_2\t999", Recommendations: []IndexRecommendation{{newPlan: "id\testCost\nRoot_1\t10.00", createStatement: "CREATE INDEX idx ON t(a);"}}}})
-	for _, want := range []string{"123.45 -&gt; 10.00", "#### Create Index Statement", "CREATE INDEX idx ON t(a);"} {
+	for _, want := range []string{"123.45 -&gt; 10.00", "#### Create Index Statement", "create index `idx` on `t` ( `a` )"} {
 		if !strings.Contains(report, want) {
 			t.Fatalf("missing %q", want)
 		}
@@ -176,7 +176,7 @@ func TestMultipleAdviceRowsAndSections(t *testing.T) {
 	if strings.Index(report, "<td>first</td>") > strings.Index(report, "<td>second</td>") {
 		t.Fatal("advice order changed")
 	}
-	for _, want := range []string{"#index-advice-abcdef123-74657374-1", "#index-advice-abcdef123-74657374-2", "CREATE INDEX first", "CREATE INDEX second"} {
+	for _, want := range []string{"#index-advice-abcdef123-74657374-1", "#index-advice-abcdef123-74657374-2", "create index `first`", "create index `second`"} {
 		if !strings.Contains(report, want) {
 			t.Fatalf("missing %q", want)
 		}
@@ -196,5 +196,43 @@ func TestReportAnchorsDistinguishSchemas(t *testing.T) {
 		if !strings.Contains(report, want) {
 			t.Fatalf("missing anchor %q", want)
 		}
+	}
+}
+
+func TestReportRedactsSQLAndPlans(t *testing.T) {
+	plan := "id\testRows\testCost\ttask\taccess object\toperator info\n" +
+		"IndexRangeScan_7\t1.00\t2.00\tcop[tikv]\ttable:orders\trange:[975318,975318], eq(email, 'secret@example.com')"
+	result := RecommendIndexResult{
+		Schema:  "app",
+		Digest:  "abcdef123",
+		SQL:     "select * from orders where id=975318 and email='secret@example.com' [arguments: 864209]",
+		OldPlan: plan,
+		Recommendations: []IndexRecommendation{{
+			Database: "app", Table: "orders", createStatement: "CREATE INDEX idx ON orders(id)",
+			newSQL:  "select /*+ USE_INDEX(orders,idx) */ * from orders where id=975318 and email='secret@example.com'",
+			newPlan: plan,
+		}},
+	}
+	report := RenderRecommendIndex([]RecommendIndexResult{result})
+	for _, secret := range []string{"975318", "864209", "secret@example.com"} {
+		if strings.Contains(report, secret) {
+			t.Fatalf("report contains secret %q: %s", secret, report)
+		}
+	}
+	for _, want := range []string{"select * from `orders`", "range:[?,?]", "table:orders", "IndexRangeScan_7", "2.00 -&gt; 2.00"} {
+		if !strings.Contains(report, want) {
+			t.Fatalf("report missing %q: %s", want, report)
+		}
+	}
+}
+
+func TestReportOmitsMalformedSQLAndPlan(t *testing.T) {
+	result := RecommendIndexResult{
+		Digest: "abcdef", SQL: "select * from t where x='private-secret", OldPlan: "private-plan",
+		Recommendations: []IndexRecommendation{{newSQL: "select 'private-hint", newPlan: "private-plan", createStatement: "private-ddl"}},
+	}
+	report := RenderRecommendIndex([]RecommendIndexResult{result})
+	if strings.Contains(report, "private-") || strings.Count(report, "[content omitted: unable to redact]") < 5 {
+		t.Fatalf("report did not fail closed: %s", report)
 	}
 }

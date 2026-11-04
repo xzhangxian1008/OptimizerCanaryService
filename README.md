@@ -58,12 +58,11 @@ plan changes.
 The columns are SQL Digest, Total ExecTime, ExecCount, Current Plan, New Plan,
 Plan Change (currently `N/A`), and Binding of the Current Plan. Total ExecTime
 sums SUM_LATENCY for each schema/SQL digest/plan digest group and displays
-seconds truncated to two decimal places. Binding details contain a directly
-executable `CREATE GLOBAL BINDING FOR ... USING ...;` statement with PLAN_HINT
-inserted as an optimizer hint after the main query's first SELECT, outside CTE
-definitions and before subsequent UNION branches. An existing hint immediately
-after that SELECT is replaced. Empty PLAN_HINT values are shown as unavailable.
-This report does not create bindings in TiDB.
+seconds truncated to two decimal places. Binding details are redacted
+`CREATE GLOBAL BINDING FOR ... USING ...;` templates, not directly executable
+statements. Supported identifier-only hints are retained; other hints are
+omitted. Empty PLAN_HINT values are shown as unavailable. This report does not
+create bindings in TiDB.
 
 SQL details use headings such as `SQL: d8061f40`; current plan, new plan, and
 binding details use level-three headings such as `Current Plan: 3880073a`,
@@ -97,6 +96,15 @@ The endpoint returns the complete Markdown report as a file download. With
 `curl -OJ`, the client saves it as `recommend-index.md` in the directory where
 the curl command is executed. On failure, the endpoint returns HTTP 422 with a
 JSON error response.
+
+Both reports redact SQL literals and prepared-statement arguments. SQL that
+cannot be safely parsed is omitted. Plans retain validated operator IDs, tasks,
+estimated rows and costs, recognized table/index names and expression
+structure; range boundaries and literal operands are replaced with `?`.
+Unrecognized fragments and unsupported plan layouts are omitted. Database, table,
+column and index names, digests, and execution statistics are not redacted.
+SQL and index statements in reports are display templates and may not be
+directly executable after redaction.
 
 ### `POST /test/connect` (temporary test endpoint)
 
@@ -147,10 +155,9 @@ and must not already exist. The report is created with permissions `0600`.
 and SIGTERM cancel the job. A connection, diagnosis, or file error causes a
 non-zero exit status.
 
-Reports and existing diagnostic logs can contain unredacted SQL and other
-sensitive data. This mode writes only to a local file; it does not yet redact
-or upload reports to S3, and it does not wait for TiDB to become ready. Use it
-only where those outputs are protected.
+Existing diagnostic logs can contain unredacted SQL and other sensitive data.
+This mode writes only to a local file; it does not yet upload reports to S3 or
+wait for TiDB to become ready. Use it only where those outputs are protected.
 
 ### HTTP service
 

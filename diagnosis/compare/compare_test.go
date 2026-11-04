@@ -58,8 +58,8 @@ func TestComparerOnlyReportsChangedIDAndTask(t *testing.T) {
 	if !strings.Contains(report, "## Summary\n\n- SQLs Checked: 2\n- Total ExecCount: 9\n- SQLs with Plan Changes: 1") {
 		t.Fatalf("unexpected report summary: %s", report)
 	}
-	if !strings.Contains(report, "SELECT /*+ HASH_AGG() */ * FROM t WHERE id = 2") {
-		t.Fatal("missing current plan hinted SQL")
+	if !strings.Contains(report, "/*+ hash_agg()*/") || strings.Contains(report, "WHERE id = 2") {
+		t.Fatal("missing redacted current plan hinted SQL")
 	}
 	if strings.Contains(report, "11111111_aaaaaaaa") {
 		t.Fatalf("unchanged plan was included: %s", report)
@@ -73,7 +73,7 @@ func TestComparerOnlyReportsChangedIDAndTask(t *testing.T) {
 	if !strings.Contains(report, "### Current Plan: bbbbbbbb") ||
 		!strings.Contains(report, "### New Plan: bbbbbbbb") ||
 		!strings.Contains(report, "### Binding Stmt: 22222222_bbbbbbbb") ||
-		!strings.Contains(report, "CREATE GLOBAL BINDING FOR SELECT * FROM t WHERE id = 2 USING") {
+		!strings.Contains(report, "CREATE GLOBAL BINDING FOR select * from `t` where `id` = ? USING") {
 		t.Fatalf("detail headings missing: %s", report)
 	}
 }

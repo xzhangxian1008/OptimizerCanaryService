@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis/compare"
+	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis/redact"
 	"go.uber.org/zap"
 )
 
@@ -439,6 +440,7 @@ func RenderRecommendIndex(results []RecommendIndexResult) string {
 	})
 	var report strings.Builder
 	report.WriteString("# Index Recommendation Overview\n\n")
+	report.WriteString("SQL and index statements are redacted display templates; hints and plan details may be omitted.\n\n")
 	report.WriteString("<table>\n<thead><tr><th>SQL</th><th>Total Time</th><th>Count</th><th>Database</th><th>Table</th><th>Est Cost Change</th><th>Est Improvement</th><th>Advice</th></tr></thead>\n<tbody>\n")
 	for _, result := range results {
 		digest := recommendAnchor(result)
@@ -451,7 +453,7 @@ func RenderRecommendIndex(results []RecommendIndexResult) string {
 			if database == "" {
 				database = result.Schema
 			}
-			fmt.Fprintf(&report, "<td>%s</td><td>%s</td><td>%s</td><td>%s</td><td><a href=\"#index-advice-%s-%d\">detail</a></td></tr>\n", html.EscapeString(database), html.EscapeString(advice.Table), html.EscapeString(topPlanCost(result.OldPlan)+" -> "+topPlanCost(advice.newPlan)), formatEstImprovement([]IndexRecommendation{advice}), html.EscapeString(digest), i+1)
+			fmt.Fprintf(&report, "<td>%s</td><td>%s</td><td>%s</td><td>%s</td><td><a href=\"#index-advice-%s-%d\">detail</a></td></tr>\n", html.EscapeString(database), html.EscapeString(advice.Table), html.EscapeString(topPlanCost(redact.DisplayPlan(result.OldPlan))+" -> "+topPlanCost(redact.DisplayPlan(advice.newPlan))), formatEstImprovement([]IndexRecommendation{advice}), html.EscapeString(digest), i+1)
 		}
 	}
 	report.WriteString("</tbody>\n</table>\n")
@@ -462,17 +464,17 @@ func RenderRecommendIndex(results []RecommendIndexResult) string {
 		writeMetadataBlock(&report, fmt.Sprintf("SQL Digest: %s", result.Digest))
 		report.WriteString("\n")
 		report.WriteString("### SQL Statement\n\n")
-		writeRecommendSQLBlock(&report, result.SQL)
+		writeRecommendSQLBlock(&report, redact.DisplaySQL(result.SQL))
 		for i, advice := range result.Recommendations {
 			fmt.Fprintf(&report, "\n<a id=\"index-advice-%s-%d\"></a>\n\n### Advice\n\n", digest, i+1)
 			report.WriteString("#### Create Index Statement\n\n")
-			writeRecommendSQLBlock(&report, advice.createStatement)
+			writeRecommendSQLBlock(&report, redact.DisplaySQL(advice.createStatement))
 			report.WriteString("\n#### Old Plan\n\n")
-			writePlanBlock(&report, alignPlanColumns(compare.WithoutPlanColumns(result.OldPlan, "actRows", "execution info", "memory", "disk")))
+			writePlanBlock(&report, alignPlanColumns(redact.DisplayPlanWithSQL(compare.WithoutPlanColumns(result.OldPlan, "actRows", "execution info", "memory", "disk"), result.SQL, result.Schema)))
 			report.WriteString("\n#### New Plan\n\n")
-			writeRecommendSQLBlock(&report, "-- Sql with hypo_index hint\n"+advice.newSQL)
+			writeRecommendSQLBlock(&report, redact.DisplaySQL(advice.newSQL))
 			report.WriteString("\n")
-			writePlanBlock(&report, alignPlanColumns(advice.newPlan))
+			writePlanBlock(&report, alignPlanColumns(redact.DisplayPlanWithSQL(advice.newPlan, result.SQL, result.Schema)))
 		}
 
 	}

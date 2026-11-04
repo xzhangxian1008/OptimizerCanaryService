@@ -54,3 +54,23 @@ func TestComparisonReportColumnsAndHierarchy(t *testing.T) {
 		t.Fatal("plan detail placed under the wrong SQL heading")
 	}
 }
+
+func TestComparisonReportRedactsSQLBindingAndPlans(t *testing.T) {
+	sql := "SELECT * FROM orders WHERE id = 975318 AND email = 'secret@example.com'"
+	plan := "id\ttask\toperator info\nTableReader_1\troot\trange:[975318,975318], eq(email, 'secret@example.com')"
+	report := renderComparison([]comparedPlan{{
+		statement: SQLInfo{Sample: Sample{Schema: "app", SQL: sql}, SQLDigest: "abcdef123", PlanDigest: "11111111", Plan: plan},
+		bindings:  "SELECT /*+ USE_INDEX(orders, idx) */ * FROM orders WHERE id = 975318 AND email = 'secret@example.com'",
+		newPlan:   plan,
+	}}, reportSummary{})
+	for _, secret := range []string{"975318", "secret@example.com"} {
+		if strings.Contains(report, secret) {
+			t.Fatalf("report contains secret %q: %s", secret, report)
+		}
+	}
+	for _, want := range []string{"select * from `orders`", "CREATE GLOBAL BINDING", "use_index", "TableReader_1", "range:[?,?]"} {
+		if !strings.Contains(report, want) {
+			t.Fatalf("missing %q: %s", want, report)
+		}
+	}
+}

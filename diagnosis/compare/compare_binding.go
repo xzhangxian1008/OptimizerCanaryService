@@ -12,15 +12,6 @@ func formatExecTime(ns uint64) string {
 	return fmt.Sprintf("%d.%02ds", ns/1_000_000_000, (ns%1_000_000_000)/10_000_000)
 }
 
-func bindingStatement(originSQL, hintedSQL string) string {
-	originSQL = strings.TrimSuffix(strings.TrimSpace(originSQL), ";")
-	hintedSQL = strings.TrimSuffix(strings.TrimSpace(hintedSQL), ";")
-	if hintedSQL == "" {
-		return ""
-	}
-	return fmt.Sprintf("CREATE GLOBAL BINDING FOR %s USING %s;", originSQL, hintedSQL)
-}
-
 // getCurrentPlanBinding generates report text only; it never installs a binding.
 // Selects inside CTE definitions and subqueries have greater parenthesis depth
 // than the main query. At equal depth the first SELECT wins, including UNION.

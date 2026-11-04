@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis/redact"
 	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis/util"
 )
 
@@ -515,6 +516,7 @@ func aggregateSqlInfos(sqlInfos []SQLInfo) []SQLInfo {
 func renderComparison(plans []comparedPlan, summary reportSummary) string {
 	var report strings.Builder
 	report.WriteString("# SQL Plan Comparison\n\n")
+	report.WriteString("SQL and binding statements are redacted display templates; plan details may be omitted.\n\n")
 	report.WriteString("## Summary\n\n")
 	fmt.Fprintf(&report, "- SQLs Checked: %d\n", summary.checkedSQLs)
 	fmt.Fprintf(&report, "- Total ExecCount: %d\n", summary.totalExecCount)
@@ -546,7 +548,7 @@ func renderComparison(plans []comparedPlan, summary reportSummary) string {
 			fmt.Fprintf(details, "\n<a id=\"%s\"></a>\n\n## %s\n\n", html.EscapeString(sqlAnchor), title)
 			fmt.Fprintf(details, "Schema: %s  \nSQL Digest: %s\n\n",
 				markdownCell(statement.Schema), markdownCell(statement.SQLDigest))
-			writeCodeBlock(details, statement.SQL)
+			writeCodeBlock(details, redact.DisplaySQL(statement.SQL))
 		}
 
 		currentPlanPrefix := firstEight(statement.PlanDigest)
@@ -557,13 +559,13 @@ func renderComparison(plans []comparedPlan, summary reportSummary) string {
 		currentAnchor := uniqueHeadingAnchor("current-plan-"+sqlDigestPrefix+"-"+currentPlanPrefix, anchors)
 		newAnchor := uniqueHeadingAnchor("new-plan-"+sqlDigestPrefix+"-"+newPlanPrefix, anchors)
 		bindingAnchor := uniqueHeadingAnchor("binding-stmt-"+sqlDigestPrefix+"-"+currentPlanPrefix, anchors)
-		currentAnchor = writeDetailWithAnchor(details, currentAnchor, currentTitle, statement, statement.PlanDigest, withoutPlanColumns(statement.Plan, "actRows", "execution info", "memory", "disk"))
-		newAnchor = writeDetailWithAnchor(details, newAnchor, newTitle, statement, plan.newPlanDigest, plan.newPlan)
+		currentAnchor = writeDetailWithAnchor(details, currentAnchor, currentTitle, statement, statement.PlanDigest, redact.DisplayPlanWithSQL(withoutPlanColumns(statement.Plan, "actRows", "execution info", "memory", "disk"), statement.SQL, statement.Schema))
+		newAnchor = writeDetailWithAnchor(details, newAnchor, newTitle, statement, plan.newPlanDigest, redact.DisplayPlanWithSQL(plan.newPlan, statement.SQL, statement.Schema))
 		bindingText := plan.bindings
 		if bindingText == "" {
 			bindingText = "No PLAN_HINT available."
 		} else {
-			bindingText = bindingStatement(statement.SQL, bindingText)
+			bindingText = redact.DisplayBinding(statement.SQL, bindingText)
 		}
 		bindingAnchor = writeDetailWithAnchor(details, bindingAnchor, bindingTitle, statement, statement.PlanDigest, bindingText)
 		fmt.Fprintf(&report, "| [%s](#%s) | %s | %d | [%s](#%s) | [%s](#%s) | %s | [%s](#%s) |\n",
