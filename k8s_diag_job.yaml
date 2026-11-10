@@ -1,0 +1,99 @@
+# Local kind experiment: one Job, diagnostic TiDB as a native sidecar,
+# diagnostic service as the main container. They share a Unix socket.
+# TiDB joins the existing kind cluster through basic-pd:2379.
+# Requires Kubernetes sidecar containers (kind v1.37 has them).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: diagnostic-tidb
+  namespace: tidb-cluster
+data:
+  tidb.toml: |
+    host = "0.0.0.0"
+    port = 0
+    socket = "/var/run/tidb/tidb.sock"
+    graceful-wait-before-shutdown = 1
+
+    [security]
+    skip-grant-table = true
+
+    [log]
+    [log.file]
+    max-backups = 0
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: diagnostic-job
+  namespace: tidb-cluster
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 1800
+  template:
+    metadata:
+      labels:
+        app: diagnostic-job
+    spec:
+      restartPolicy: Never
+      terminationGracePeriodSeconds: 20
+      volumes:
+        - name: tidb-config
+          configMap:
+            name: diagnostic-tidb
+        - name: tidb-socket
+          emptyDir: {}
+        - name: report
+          hostPath:
+            path: /tmp/diagnostic-job-report
+            type: DirectoryOrCreate
+      initContainers:
+        - name: diag-tidb
+          image: hub.pingcap.net/temp/xzx-tidb:v1
+          imagePullPolicy: IfNotPresent
+          restartPolicy: Always
+          args:
+            - --store=tikv
+            - --path=basic-pd:2379
+            - --advertise-address=$(POD_IP)
+            - --diagnostic-mode=true
+            - --config=/etc/tidb/tidb.toml
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          startupProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - test -S /var/run/tidb/tidb.sock
+            periodSeconds: 2
+            timeoutSeconds: 1
+            failureThreshold: 60
+          volumeMounts:
+            - name: tidb-config
+              mountPath: /etc/tidb
+              readOnly: true
+            - name: tidb-socket
+              mountPath: /var/run/tidb
+      containers:
+        - name: diag-service
+          image: xuzhangxian/canary:v1
+          imagePullPolicy: IfNotPresent
+          args:
+            - -mode
+            - job
+            - -dsn
+            - root@unix(/var/run/tidb/tidb.sock)/
+            - -job-type
+            - recommend-index
+            - -job-output
+            - /report/recommend-index.md
+            - -job-timeout
+            - 3m
+          volumeMounts:
+            - name: tidb-socket
+              mountPath: /var/run/tidb
+            - name: report
+              mountPath: /report

@@ -119,7 +119,7 @@ func parsePlan(planText string) (*Plan, error) {
 			continue
 		}
 		if len(fields) <= max(idColumn, taskColumn) || fields[idColumn] == "" || fields[taskColumn] == "" {
-			return nil, util.NewStackErrorf("plan row is missing id or task: %q", line)
+			continue
 		}
 		id, operator, err := parseOperatorID(fields[idColumn])
 		if err != nil {

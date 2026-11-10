@@ -64,7 +64,7 @@ func TestExecuteJob(t *testing.T) {
 	}
 }
 
-func TestExecuteJobFailureDoesNotReplaceReport(t *testing.T) {
+func TestExecuteJobFailureLeavesReportAndSuccessReplacesIt(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "report.md")
 	options := jobOptions{diagnosticType: "compare", output: path}
 	diagnostics := &fakeJobDiagnostics{err: errors.New("diagnosis failed")}
@@ -78,12 +78,12 @@ func TestExecuteJobFailureDoesNotReplaceReport(t *testing.T) {
 		t.Fatal(err)
 	}
 	diagnostics.err = nil
-	if err := executeJob(context.Background(), options, diagnostics); err == nil {
-		t.Fatal("expected existing report error")
+	if err := executeJob(context.Background(), options, diagnostics); err != nil {
+		t.Fatal(err)
 	}
 	data, err := os.ReadFile(path)
-	if err != nil || string(data) != "existing" {
-		t.Fatalf("existing report changed: %q, error: %v", data, err)
+	if err != nil || string(data) != "# Compare\n" {
+		t.Fatalf("report %q, error: %v", data, err)
 	}
 }
 

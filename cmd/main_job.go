@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -24,7 +25,7 @@ type jobOptions struct {
 func registerJobFlags(flags *flag.FlagSet) *jobOptions {
 	options := &jobOptions{}
 	flags.StringVar(&options.diagnosticType, "job-type", "", "diagnosis to run: compare or recommend-index (job mode)")
-	flags.StringVar(&options.output, "job-output", "", "new report file path (job mode)")
+	flags.StringVar(&options.output, "job-output", "", "report file path; an existing file is replaced (job mode)")
 	flags.DurationVar(&options.timeout, "job-timeout", 0, "overall job timeout; 0 disables the deadline (job mode)")
 	return options
 }
@@ -59,7 +60,11 @@ func runJob(ctx context.Context, options jobOptions, logger *zap.Logger) error {
 	if result.Err != nil {
 		return fmt.Errorf("connect to diagnostic TiDB: %w", result.Err)
 	}
-	return executeJob(ctx, options, connections)
+	if err := executeJob(ctx, options, connections); err != nil {
+		return err
+	}
+	logger.Info("diagnostic job finished", zap.String("job", options.diagnosticType))
+	return nil
 }
 
 func executeJob(ctx context.Context, options jobOptions, diagnostics jobDiagnostics) error {
@@ -84,16 +89,33 @@ func executeJob(ctx context.Context, options jobOptions, diagnostics jobDiagnost
 		return err
 	}
 
-	// Do not overwrite an existing report or leave a partial file on failure.
-	file, err := os.OpenFile(options.output, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	if err != nil {
-		return fmt.Errorf("create report: %w", err)
-	}
-	_, writeErr := file.WriteString(report)
-	closeErr := file.Close()
-	if err := errors.Join(writeErr, closeErr); err != nil {
-		_ = os.Remove(options.output)
+	if err := writeReport(options.output, report); err != nil {
 		return fmt.Errorf("write report: %w", err)
+	}
+	return nil
+}
+
+// writeReport replaces path with report. The destination is replaced only after
+// the new contents are fully written, so a write failure leaves an existing file unchanged.
+func writeReport(path, report string) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".report-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	_, writeErr := tmp.WriteString(report)
+	closeErr := tmp.Close()
+	if err := errors.Join(writeErr, closeErr); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := os.Chmod(tmpPath, 0600); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
 	}
 	return nil
 }

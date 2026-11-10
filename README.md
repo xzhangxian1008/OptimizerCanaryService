@@ -140,7 +140,8 @@ connection unchanged.
 ### One-shot diagnosis job
 
 Job mode connects to TiDB, runs one diagnosis, writes its Markdown report to a
-new local file, and exits. It does not start an HTTP server:
+local file, and exits. An existing output file is replaced. It does not start
+an HTTP server:
 
 ```bash
 go run ./cmd -mode job -dsn 'root@tcp(127.0.0.1:4000)/' \
@@ -149,8 +150,9 @@ go run ./cmd -mode job -dsn 'root@tcp(127.0.0.1:4000)/' \
 
 `-dsn` is required and may specify a TCP address or Unix socket. A password in
 the DSN may be exposed in process arguments and shell history.
-`-job-type` accepts `compare` or `recommend-index`. `-job-output` is required
-and must not already exist. The report is created with permissions `0600`.
+`-job-type` accepts `compare` or `recommend-index`. `-job-output` is required.
+If that file already exists, it is replaced. The report is written with
+permissions `0600`.
 `-job-timeout` is optional; its default is `0` (no overall deadline). SIGINT
 and SIGTERM cancel the job. A connection, diagnosis, or file error causes a
 non-zero exit status.
