@@ -16,10 +16,11 @@ import (
 )
 
 type jobOptions struct {
-	dsn            string
-	diagnosticType string
-	output         string
-	timeout        time.Duration
+	dsn                string
+	diagnosticType     string
+	output             string
+	timeout            time.Duration
+	slowQuerySQLColumn string
 }
 
 func registerJobFlags(flags *flag.FlagSet) *jobOptions {
@@ -27,6 +28,7 @@ func registerJobFlags(flags *flag.FlagSet) *jobOptions {
 	flags.StringVar(&options.diagnosticType, "job-type", "", "diagnosis to run: compare or recommend-index (job mode)")
 	flags.StringVar(&options.output, "job-output", "", "report file path; an existing file is replaced (job mode)")
 	flags.DurationVar(&options.timeout, "job-timeout", 0, "overall job timeout; 0 disables the deadline (job mode)")
+	flags.StringVar(&options.slowQuerySQLColumn, "recommend-index-sql-column", "", "slow-query SQL column: query or in_memory_original_query (job mode)")
 	return options
 }
 
@@ -44,6 +46,9 @@ func runJob(ctx context.Context, options jobOptions, logger *zap.Logger) error {
 	}
 	if options.timeout < 0 {
 		return errors.New("job-timeout must not be negative")
+	}
+	if !index_advisor.IsSupportedSlowQuerySQLColumn(options.slowQuerySQLColumn) {
+		return errors.New("recommend-index-sql-column must be query or in_memory_original_query")
 	}
 	if strings.TrimSpace(options.dsn) == "" {
 		return errors.New("dsn must not be empty")
@@ -75,7 +80,17 @@ func executeJob(ctx context.Context, options jobOptions, diagnostics jobDiagnost
 		report, err = diagnostics.Compare(ctx)
 	case "recommend-index":
 		var results []index_advisor.RecommendIndexResult
-		results, err = diagnostics.RecommendIndex(ctx)
+		if options.slowQuerySQLColumn != "" {
+			if configurable, ok := diagnostics.(interface {
+				RecommendIndexWithSQLColumn(context.Context, string) ([]index_advisor.RecommendIndexResult, error)
+			}); ok {
+				results, err = configurable.RecommendIndexWithSQLColumn(ctx, options.slowQuerySQLColumn)
+			} else {
+				results, err = diagnostics.RecommendIndex(ctx)
+			}
+		} else {
+			results, err = diagnostics.RecommendIndex(ctx)
+		}
 		if err == nil {
 			report = index_advisor.RenderRecommendIndex(results)
 		}

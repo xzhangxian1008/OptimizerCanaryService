@@ -27,6 +27,7 @@ type Sample struct {
 
 const recommendIndexQueryTimeout = 15 * time.Second
 const recommendIndexMaxResults = 20
+const recommendIndexMaxWarningLogCnt = 3000
 
 // RecommendIndexResult contains the statement and the non-empty values
 // returned by TiDB's RECOMMEND INDEX command for that statement.
@@ -61,13 +62,21 @@ type RecommendIndexRepository interface {
 	RecommendIndex(context.Context) ([]RecommendIndexResult, error)
 }
 
+// ConfigurableRecommendIndexRepository supports selecting the SQL column used
+// by the cluster slow-query source for a single request.
+type ConfigurableRecommendIndexRepository interface {
+	RecommendIndexWithSQLColumn(context.Context, string) ([]RecommendIndexResult, error)
+}
+
 type SQLRecommendIndexRepository struct {
-	db     *sql.DB
-	logger *zap.Logger
+	db                 *sql.DB
+	logger             *zap.Logger
+	slowQuerySQLColumn string
 }
 
 type recommendIndexSample struct {
 	Sample
+	Source             string
 	Digest             string
 	ExecTime           uint64
 	ExecCount          uint64
@@ -78,20 +87,61 @@ type recommendIndexSample struct {
 	LastSeen           string
 }
 
-func NewSQLRecommendIndexRepository(db *sql.DB, logger *zap.Logger) *SQLRecommendIndexRepository {
-	return &SQLRecommendIndexRepository{db: db, logger: logger}
+func NewSQLRecommendIndexRepository(db *sql.DB, logger *zap.Logger, slowQuerySQLColumn ...string) *SQLRecommendIndexRepository {
+	column := DefaultSlowQuerySQLColumn
+	if len(slowQuerySQLColumn) > 0 {
+		column = NormalizeSlowQuerySQLColumn(slowQuerySQLColumn[0])
+	}
+	return &SQLRecommendIndexRepository{db: db, logger: logger, slowQuerySQLColumn: column}
 }
 
 func (r *SQLRecommendIndexRepository) RecommendIndex(ctx context.Context) ([]RecommendIndexResult, error) {
+	return r.recommendIndex(ctx)
+}
+
+func (r *SQLRecommendIndexRepository) RecommendIndexWithSQLColumn(ctx context.Context, column string) ([]RecommendIndexResult, error) {
+	copy := *r
+	copy.slowQuerySQLColumn = NormalizeSlowQuerySQLColumn(column)
+	return copy.recommendIndex(ctx)
+}
+
+func (r *SQLRecommendIndexRepository) recommendIndex(ctx context.Context) ([]RecommendIndexResult, error) {
 	current, err := r.readSamples(ctx, currentSummaryQuery)
 	if err != nil {
 		return nil, fmt.Errorf("read current statement summary: %w", err)
 	}
+	// for _, sample := range current {
+	// 	r.logger.Info(fmt.Sprintf("xzxdebug: %s", sample.SQL))
+	// }
+	markSampleSource(current, "cluster_statements_summary")
+
 	history, err := r.readSamples(ctx, historySummaryQuery)
 	if err != nil {
 		return nil, fmt.Errorf("read statement summary history: %w", err)
 	}
-	samples := aggregateAndSortSamples(mergeSummaryWindows(current, history))
+	// for _, sample := range history {
+	// 	r.logger.Info(fmt.Sprintf("xzxdebug: %s", sample.SQL))
+	// }
+	markSampleSource(history, "cluster_statements_summary_history")
+
+	slowQueries, err := r.readSlowQuerySamples(ctx)
+	if err != nil {
+		// CLUSTER_SLOW_QUERY is not available on some TiDB Cloud tiers and
+		// older TiDB versions. Keep statement-summary recommendations usable
+		// when that optional source is unavailable.
+		if isStaleObjectError(err) {
+			r.logger.Warn("skip cluster slow query source", zap.Error(err))
+			slowQueries = nil
+		} else {
+			return nil, fmt.Errorf("read cluster slow query: %w", err)
+		}
+	}
+	// for _, sample := range slowQueries {
+	// 	r.logger.Info(fmt.Sprintf("xzxdebug: %s", sample.SQL))
+	// }
+	markSampleSource(slowQueries, "cluster_slow_query")
+
+	samples := aggregateAndSortSamples(append(mergeSummaryWindows(current, history), slowQueries...))
 	return recommendSamples(ctx, samples, r, r.logger)
 }
 
@@ -102,33 +152,41 @@ type indexRecommendationRunner interface {
 
 func recommendSamples(ctx context.Context, samples []recommendIndexSample, runner indexRecommendationRunner, logger *zap.Logger) ([]RecommendIndexResult, error) {
 	results := make([]RecommendIndexResult, 0, recommendIndexMaxResults)
+	warningCount := 0
+	warnSQL := func(message string, sample recommendIndexSample, err error) {
+		if warningCount >= recommendIndexMaxWarningLogCnt {
+			return
+		}
+		logger.Warn(message,
+			zap.String("schema", sample.Schema),
+			zap.String("digest", sample.Digest),
+			zap.String("source", sample.Source),
+			zap.String("sql", sample.SQL),
+			zap.Error(err))
+		warningCount++
+	}
+
 	for _, sample := range samples {
+		if isSampleInBlacklist(sample) {
+			continue
+		}
 		recommendations, err := runner.recommendFor(ctx, sample.Sample)
 		if err != nil {
 			if isStaleObjectError(err) {
-				logger.Warn("skip SQL referencing a missing database object", zap.String("digest", sample.Digest), zap.Error(err))
+				warnSQL("skip SQL referencing a missing database object", sample, err)
 				continue
 			}
-			// TODO `RECOMMEND INDEX RETURN RESULT FOR 'xxxx'`` may encounter syntax error,
-			// because the sql xxxx may also include `'` character. We ignore this error and
-			// fix it in the furure.
 			if isSQLSyntaxError(err) {
-				logger.Warn("skip SQL with syntax error during index recommendation",
-					zap.String("digest", sample.Digest),
-					zap.String("query_sample_text", sample.SQL),
-					zap.Error(err))
+				warnSQL("skip SQL with syntax error during index recommendation", sample, err)
 				continue
 			}
 
-			// Select for system table will be rejected by index advisor, this is expected behaviour
 			if isEmptyQuerySetError(err) {
-				logger.Debug("skip SQL rejected by index advisor",
-					zap.String("schema", sample.Schema),
-					zap.String("digest", sample.Digest),
-					zap.Error(err))
+				warnSQL("skip SQL rejected by index advisor", sample, err)
 				continue
 			}
-			return nil, err
+			warnSQL("skip SQL after index recommendation error", sample, err)
+			continue
 		}
 
 		if len(recommendations) == 0 {
@@ -138,34 +196,37 @@ func recommendSamples(ctx context.Context, samples []recommendIndexSample, runne
 		oldPlan, err := runner.getSQLPlan(ctx, sample.Sample, convertToRecommendableStatement(sample.SQL))
 		if err != nil {
 			if isStaleObjectError(err) {
-				logger.Warn("skip SQL referencing a missing database object", zap.String("digest", sample.Digest), zap.Error(err))
+				warnSQL("skip SQL referencing a missing database object", sample, err)
 				continue
 			}
 			if isSQLSyntaxError(err) {
-				logger.Warn("skip SQL with syntax error during original EXPLAIN", zap.String("digest", sample.Digest), zap.String("query_sample_text", sample.SQL), zap.Error(err))
+				warnSQL("skip SQL with syntax error during original EXPLAIN", sample, err)
 				continue
 			}
-			return nil, err
+			warnSQL("skip SQL after original EXPLAIN error", sample, err)
+			continue
 		}
 
 		var completed []IndexRecommendation
 		for _, advice := range recommendations {
 			hintedSQL, err := buildHypoIndexSQL(sample.SQL, []IndexRecommendation{advice})
 			if err != nil {
-				return nil, fmt.Errorf("build hypothetical index SQL: %w", err)
+				warnSQL("skip index advice after building hypothetical SQL error", sample, err)
+				continue
 			}
 
 			newPlan, err := runner.getSQLPlan(ctx, sample.Sample, hintedSQL)
 			if err != nil {
 				if isStaleObjectError(err) {
-					logger.Warn("skip advice referencing a missing database object", zap.String("digest", sample.Digest), zap.Error(err))
+					warnSQL("skip advice referencing a missing database object", sample, err)
 					continue
 				}
 				if isSQLSyntaxError(err) {
-					logger.Warn("skip advice with syntax error during hypothetical index EXPLAIN", zap.String("digest", sample.Digest), zap.String("query_sample_text", sample.SQL), zap.Error(err))
+					warnSQL("skip advice with syntax error during hypothetical index EXPLAIN", sample, err)
 					continue
 				}
-				return nil, err
+				warnSQL("skip advice after hypothetical index EXPLAIN error", sample, err)
+				continue
 			}
 
 			// TODO: compare oldPlan and newPlan; skip advice if the plans are equal.
@@ -195,6 +256,20 @@ func recommendSamples(ctx context.Context, samples []recommendIndexSample, runne
 	return results, nil
 }
 
+func isSampleInBlacklist(sample recommendIndexSample) bool {
+	switch strings.ToLower(sample.Schema) {
+	case "information_schema", "mysql":
+		return true
+	}
+	sql := strings.ToLower(sample.SQL)
+	for _, fragment := range []string{"from mysql.", "from information_schema.", "cluster_slow_query"} {
+		if strings.Contains(sql, fragment) {
+			return true
+		}
+	}
+	return false
+}
+
 type recommendIndexSampleKey struct {
 	schema string
 	digest string
@@ -214,7 +289,7 @@ func aggregateAndSortSamples(rawSamples []recommendIndexSample) []recommendIndex
 			existing.ExecCount = totalCount
 			existing.ExecTime += sample.ExecTime
 			if sample.LastSeen > existing.LastSeen || (sample.LastSeen == existing.LastSeen && sample.SQL < existing.SQL) {
-				existing.SQL, existing.LastSeen = sample.SQL, sample.LastSeen
+				existing.SQL, existing.LastSeen, existing.Source = sample.SQL, sample.LastSeen, sample.Source
 			}
 			byKey[key] = existing
 		} else {

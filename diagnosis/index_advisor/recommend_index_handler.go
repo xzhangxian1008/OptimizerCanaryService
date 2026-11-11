@@ -3,6 +3,7 @@ package index_advisor
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis/util"
@@ -29,7 +30,22 @@ func (h *RecommendIndexHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 		h.logger.Warn("clear recommend-index response deadline", zap.Error(err))
 	}
 
-	results, err := h.repository.RecommendIndex(r.Context())
+	column := r.URL.Query().Get("slow_query_sql_column")
+	if !IsSupportedSlowQuerySQLColumn(column) {
+		http.Error(w, "slow_query_sql_column must be query or in_memory_original_query", http.StatusBadRequest)
+		return
+	}
+	var results []RecommendIndexResult
+	var err error
+	if column != "" {
+		if configurable, ok := h.repository.(ConfigurableRecommendIndexRepository); ok {
+			results, err = configurable.RecommendIndexWithSQLColumn(r.Context(), strings.TrimSpace(column))
+		} else {
+			results, err = h.repository.RecommendIndex(r.Context())
+		}
+	} else {
+		results, err = h.repository.RecommendIndex(r.Context())
+	}
 	if err != nil {
 		h.logger.Error("recommend index failed", zap.Error(err))
 		util.WriteJSON(w, http.StatusUnprocessableEntity, map[string]any{"status": "failed", "reason": err.Error()})

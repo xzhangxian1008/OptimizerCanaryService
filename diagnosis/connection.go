@@ -124,3 +124,11 @@ func (m *ConnectionManager) RecommendIndex(ctx context.Context) ([]index_advisor
 	}
 	return index_advisor.NewSQLRecommendIndexRepository(db, m.logger).RecommendIndex(ctx)
 }
+
+func (m *ConnectionManager) RecommendIndexWithSQLColumn(ctx context.Context, column string) ([]index_advisor.RecommendIndexResult, error) {
+	db, err := m.current()
+	if err != nil {
+		return nil, err
+	}
+	return index_advisor.NewSQLRecommendIndexRepository(db, m.logger, column).RecommendIndex(ctx)
+}

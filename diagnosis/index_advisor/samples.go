@@ -6,6 +6,32 @@ import (
 	"strings"
 )
 
+const DefaultSlowQuerySQLColumn = "in_memory_original_query"
+
+// NormalizeSlowQuerySQLColumn returns a supported slow-query SQL column.
+// Unknown and empty values intentionally fall back to the historical default.
+func NormalizeSlowQuerySQLColumn(column string) string {
+	switch strings.ToLower(strings.TrimSpace(column)) {
+	case "query":
+		return "query"
+	case DefaultSlowQuerySQLColumn:
+		return DefaultSlowQuerySQLColumn
+	default:
+		return DefaultSlowQuerySQLColumn
+	}
+}
+
+func IsSupportedSlowQuerySQLColumn(column string) bool {
+	column = strings.ToLower(strings.TrimSpace(column))
+	return column == "" || column == "query" || column == DefaultSlowQuerySQLColumn
+}
+
+func markSampleSource(samples []recommendIndexSample, source string) {
+	for i := range samples {
+		samples[i].Source = source
+	}
+}
+
 // Fetch individual summary rows and aggregate in Go. Aggregation in the
 // statement summary query can return incomplete results on affected versions:
 // https://github.com/pingcap/tidb/issues/71913.
@@ -25,6 +51,21 @@ WHERE LOWER(stmt_type) = 'select'
 const currentSummaryQuery = summaryColumns + `information_schema.cluster_statements_summary` + summaryFilter
 const historySummaryQuery = summaryColumns + `information_schema.cluster_statements_summary_history` + summaryFilter + `
   AND summary_end_time > DATE_SUB(NOW(), INTERVAL 24 HOUR)`
+
+// Slow query rows contain an unredacted statement in the configured SQL
+// column. Unlike statement summaries, they do not expose TABLE_NAMES, so the
+// index advisor itself is responsible for rejecting any statement it cannot
+// explain or recommend an index for.
+func slowQueryQuery(sqlColumn string) string {
+	column := NormalizeSlowQuerySQLColumn(sqlColumn)
+	return fmt.Sprintf(`SELECT COALESCE(db, ''), COALESCE(digest, ''),
+       COALESCE(%s, ''), COALESCE(query_time, 0),
+       COALESCE(CAST(time AS CHAR), '')
+FROM information_schema.cluster_slow_query
+WHERE is_internal = FALSE
+  AND %s IS NOT NULL
+  AND %s <> ''`, column, column, column)
+}
 
 func (r *SQLRecommendIndexRepository) readSamples(ctx context.Context, query string) ([]recommendIndexSample, error) {
 	queryCtx, cancel := context.WithTimeout(ctx, recommendIndexQueryTimeout)
@@ -53,6 +94,40 @@ func (r *SQLRecommendIndexRepository) readSamples(ctx context.Context, query str
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("read SELECT statements: %w", err)
+	}
+	return samples, nil
+}
+
+func (r *SQLRecommendIndexRepository) readSlowQuerySamples(ctx context.Context) ([]recommendIndexSample, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, recommendIndexQueryTimeout)
+	defer cancel()
+	rows, err := r.db.QueryContext(queryCtx, slowQueryQuery(r.slowQuerySQLColumn))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var samples []recommendIndexSample
+	for rows.Next() {
+		var sample recommendIndexSample
+		var queryTime float64
+		if err := rows.Scan(&sample.Schema, &sample.Digest, &sample.SQL, &queryTime, &sample.LastSeen); err != nil {
+			return nil, fmt.Errorf("scan slow query statement: %w", err)
+		}
+		// QUERY_TIME is reported in seconds while statement-summary
+		// SUM_LATENCY is represented in nanoseconds by the MySQL driver.
+		if queryTime > 0 {
+			sample.ExecTime = uint64(queryTime * 1e9)
+		}
+		if strings.TrimSpace(sample.SQL) == "" {
+			continue
+		}
+		// Each row in CLUSTER_SLOW_QUERY is one slow-log execution.
+		sample.ExecCount = 1
+		samples = append(samples, sample)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read slow query statements: %w", err)
 	}
 	return samples, nil
 }

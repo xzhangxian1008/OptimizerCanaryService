@@ -77,7 +77,12 @@ curl -sS -OJ http://127.0.0.1:8080/compare
 
 After a TiDB connection has been configured, this endpoint selects `SELECT`
 statements from `information_schema.cluster_statements_summary` and the last
-24 hours of `cluster_statements_summary_history`. It excludes samples without a
+24 hours of `cluster_statements_summary_history`. It also reads
+`information_schema.cluster_slow_query`; by default, rows whose
+`In_memory_original_query` is empty are skipped, and the non-empty original SQL
+is added as a candidate.
+The slow-query source is optional because `CLUSTER_SLOW_QUERY` is unavailable
+on some TiDB Cloud tiers and older TiDB versions. It excludes samples without a
 user or user-table metadata, and samples that reference system schemas. TiDB's
 summary tables do not expose an internal-statement flag, so a sample user is
 only a best-effort filter for internal statements. It aggregates execution
@@ -91,6 +96,12 @@ eviction. A failed summary query fails the request:
 ```bash
 curl -sS -OJ http://127.0.0.1:8080/recommend-index
 ```
+
+The SQL column used for slow-query candidates defaults to
+`in_memory_original_query`. Service callers can use
+`/recommend-index?slow_query_sql_column=query` to use the `query` column.
+Job mode accepts the equivalent `-recommend-index-sql-column query` flag;
+supported values are `query` and `in_memory_original_query`.
 
 The endpoint returns the complete Markdown report as a file download. With
 `curl -OJ`, the client saves it as `recommend-index.md` in the directory where

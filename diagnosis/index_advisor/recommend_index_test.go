@@ -2,12 +2,14 @@ package index_advisor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/go-sql-driver/mysql"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestAggregateWeightedMetrics(t *testing.T) {
@@ -24,6 +26,41 @@ func TestAggregateWeightedMetrics(t *testing.T) {
 	a := got[1]
 	if a.ExecCount != 8 || a.ExecTime != 30 || a.AvgMem != 250 || a.AvgRequestUnitRead != 2.5 || a.SQL != "select 3" {
 		t.Fatalf("unexpected aggregation: %+v", a)
+	}
+}
+
+func TestSlowQuerySQLColumn(t *testing.T) {
+	defaultQuery := slowQueryQuery("")
+	if !strings.Contains(defaultQuery, "COALESCE(in_memory_original_query, '')") {
+		t.Fatalf("default slow-query column missing: %s", defaultQuery)
+	}
+	queryColumn := slowQueryQuery("query")
+	if !strings.Contains(queryColumn, "COALESCE(query, '')") || strings.Contains(queryColumn, "in_memory_original_query") {
+		t.Fatalf("query column not selected: %s", queryColumn)
+	}
+	if !IsSupportedSlowQuerySQLColumn("query") || IsSupportedSlowQuerySQLColumn("other") {
+		t.Fatal("unexpected slow-query column validation")
+	}
+}
+
+func TestRecommendSamplesSkipsBlacklistedSamples(t *testing.T) {
+	for _, sample := range []recommendIndexSample{
+		{Sample: Sample{Schema: "information_schema", SQL: "SELECT * FROM t"}},
+		{Sample: Sample{Schema: "mysql", SQL: "SELECT * FROM t"}},
+		{Sample: Sample{Schema: "app", SQL: "SELECT * FROM mysql.user"}},
+		{Sample: Sample{Schema: "app", SQL: "SELECT * FROM information_schema.tables"}},
+		{Sample: Sample{Schema: "app", SQL: "SELECT * FROM cluster_slow_query"}},
+	} {
+		if !isSampleInBlacklist(sample) {
+			t.Fatalf("sample was not blacklisted: %+v", sample)
+		}
+	}
+	runner := &fakeRecommendationRunner{}
+	results, err := recommendSamples(context.Background(), []recommendIndexSample{
+		{Sample: Sample{Schema: "mysql", SQL: "SELECT 1"}},
+	}, runner, zap.NewNop())
+	if err != nil || len(results) != 0 || len(runner.calls) != 0 {
+		t.Fatalf("blacklisted sample was processed: results=%+v calls=%v err=%v", results, runner.calls, err)
 	}
 }
 
@@ -92,6 +129,39 @@ func TestRecommendSamplesSkipsMissingObjects(t *testing.T) {
 	results, err := recommendSamples(context.Background(), samples, runner, zap.NewNop())
 	if err != nil || len(results) != 1 || results[0].SQL != "valid" {
 		t.Fatalf("results=%+v calls=%v err=%v", results, runner.calls, err)
+	}
+}
+
+func TestRecommendSamplesContinuesAfterUnexpectedError(t *testing.T) {
+	runner := &fakeRecommendationRunner{failures: map[string]error{
+		"unexpected": errors.New("unexpected recommendation failure"),
+	}}
+	samples := []recommendIndexSample{
+		{Sample: Sample{SQL: "unexpected"}},
+		{Sample: Sample{SQL: "no advice"}},
+		{Sample: Sample{SQL: "valid"}},
+	}
+	results, err := recommendSamples(context.Background(), samples, runner, zap.NewNop())
+	if err != nil || len(results) != 1 || results[0].SQL != "valid" {
+		t.Fatalf("results=%+v calls=%v err=%v", results, runner.calls, err)
+	}
+}
+
+func TestRecommendSamplesCapsWarnings(t *testing.T) {
+	core, logs := observer.New(zap.WarnLevel)
+	logger := zap.New(core)
+	runner := &fakeRecommendationRunner{failures: make(map[string]error, recommendIndexMaxWarningLogCnt+1)}
+	samples := make([]recommendIndexSample, 0, recommendIndexMaxWarningLogCnt+1)
+	for i := 0; i < recommendIndexMaxWarningLogCnt+1; i++ {
+		sql := fmt.Sprintf("unexpected %d", i)
+		runner.failures[sql] = errors.New("unexpected recommendation failure")
+		samples = append(samples, recommendIndexSample{Sample: Sample{SQL: sql}})
+	}
+	if _, err := recommendSamples(context.Background(), samples, runner, logger); err != nil {
+		t.Fatalf("recommendSamples returned error: %v", err)
+	}
+	if logs.Len() != recommendIndexMaxWarningLogCnt {
+		t.Fatalf("warning count = %d, want %d", logs.Len(), recommendIndexMaxWarningLogCnt)
 	}
 }
 

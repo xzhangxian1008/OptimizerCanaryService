@@ -38,7 +38,7 @@ func main() {
 	flag.Usage = func() {
 		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "usage:\n")
 		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "  %s [-mode service] -http-addr <host:port>\n", os.Args[0])
-		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "  %s -mode job -dsn <TiDB DSN> -job-type <compare|recommend-index> -job-output <path>\n", os.Args[0])
+		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "  %s -mode job -dsn <TiDB DSN> -job-type <compare|recommend-index> -job-output <path> [-recommend-index-sql-column <query|in_memory_original_query>]\n", os.Args[0])
 		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "  %s -mode prepare -dsn <TiDB DSN> [-prepare-schema <schema>] [-prepare-concurrency <n>] [-prepare-duration <duration>]\n", os.Args[0])
 		flag.PrintDefaults()
 	}
