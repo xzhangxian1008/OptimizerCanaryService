@@ -97,6 +97,13 @@ eviction. A failed summary query fails the request:
 curl -sS -OJ http://127.0.0.1:8080/recommend-index
 ```
 
+Service and job mode logs default to `info`. Adjust the level at startup with
+`-log-level debug`, `-log-level info`, `-log-level warn`, or `-log-level error`.
+
+```bash
+./OptimizerCanaryService -mode service -http-addr :8080 -log-level info
+```
+
 The SQL column used for slow-query candidates defaults to
 `in_memory_original_query`. Service callers can use
 `/recommend-index?slow_query_sql_column=query` to use the `query` column.

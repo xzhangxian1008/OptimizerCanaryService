@@ -23,16 +23,10 @@ const (
 )
 
 func main() {
-	logger, err := zap.NewDevelopment()
-	if err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "initialize logger: %v\n", err)
-		os.Exit(1)
-	}
-	defer func() { _ = logger.Sync() }()
-
 	mode := flag.String("mode", "service", "startup mode: service, job, or prepare")
 	httpAddress := flag.String("http-addr", "", "HTTP listen address in host:port form (service mode)")
 	dsn := flag.String("dsn", "", "TiDB DSN (job and prepare modes)")
+	logLevel := flag.String("log-level", "info", "log level: debug, info, warn, or error")
 	prepareOptions := registerPrepareFlags(flag.CommandLine)
 	jobOptions := registerJobFlags(flag.CommandLine)
 	flag.Usage = func() {
@@ -47,6 +41,19 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
+	level, err := zap.ParseAtomicLevel(*logLevel)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "invalid -log-level %q: %v\n", *logLevel, err)
+		os.Exit(1)
+	}
+	loggerConfig := zap.NewDevelopmentConfig()
+	loggerConfig.Level = level
+	logger, err := loggerConfig.Build()
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "initialize logger: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() { _ = logger.Sync() }()
 	shutdownCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 

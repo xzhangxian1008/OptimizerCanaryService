@@ -359,7 +359,7 @@ func (r *SQLRecommendIndexRepository) recommendFor(ctx context.Context, sample S
 
 	statement := convertToRecommendableStatement(sample.SQL)
 	recommendSQL := "RECOMMEND INDEX RETURN RESULT FOR'" + strings.ReplaceAll(statement, "'", "''") + "'"
-	r.logger.Info("execute SQL", zap.String("schema", sample.Schema), zap.String("sql", recommendSQL))
+	r.logger.Debug("execute SQL", zap.String("schema", sample.Schema), zap.String("sql", recommendSQL))
 	rows, err := conn.QueryContext(recommendCtx, recommendSQL)
 	if err != nil {
 		return nil, fmt.Errorf("recommend index return result statement: %w", err)
