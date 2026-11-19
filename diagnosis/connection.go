@@ -114,7 +114,7 @@ func (m *ConnectionManager) Compare(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return compare.NewComparer(compare.NewSQLRepository(db, m.logger)).Compare(ctx)
+	return compare.NewComparer(compare.NewSQLRepository(db, m.logger), m.logger).Compare(ctx)
 }
 
 func (m *ConnectionManager) RecommendIndex(ctx context.Context) ([]index_advisor.RecommendIndexResult, error) {

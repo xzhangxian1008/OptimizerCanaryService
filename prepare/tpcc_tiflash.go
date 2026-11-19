@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis/util"
 	"go.uber.org/zap"
 )
 
@@ -81,10 +82,10 @@ func (p *preparer) waitForTPCCTiFlashReplicas(ctx context.Context) error {
 }
 
 func (p *preparer) loadTiFlashReplicaStatuses(ctx context.Context) (map[string]tiFlashReplicaStatus, error) {
-	const query = `SELECT table_name, available, progress
+	query := `SELECT table_name, available, progress
 	FROM information_schema.tiflash_replica
-	WHERE table_schema = ?`
-	rows, err := p.conn.QueryContext(ctx, query, p.schema)
+	WHERE table_schema = ` + util.SQLStringLiteral(p.schema)
+	rows, err := p.conn.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("query TiFlash replica status: %w", err)
 	}

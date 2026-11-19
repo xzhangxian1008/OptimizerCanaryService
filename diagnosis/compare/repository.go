@@ -22,8 +22,9 @@ func NewSQLRepository(db *sql.DB, logger *zap.Logger) *SQLRepository {
 func (r *SQLRepository) Bindings(ctx context.Context, digest, schema string) (string, error) {
 	queryCtx, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
-	r.logger.Info("execute SQL", zap.String("sql", compareBindingsQuery), zap.String("digest", digest), zap.String("schema", schema))
-	rows, err := r.db.QueryContext(queryCtx, compareBindingsQuery, digest, schema)
+	query := compareBindingsQuery(digest, schema)
+	r.logger.Info("execute SQL", zap.String("sql", query), zap.String("digest", digest), zap.String("schema", schema))
+	rows, err := r.db.QueryContext(queryCtx, query)
 	if err != nil {
 		return "", util.NewStackErrorf("query bindings: %w", err)
 	}
@@ -81,7 +82,12 @@ func (r *SQLRepository) ExplainPlanWithDigest(ctx context.Context, sample Sample
 	}
 	planDigest, err := r.GetNewPlanDigest(ctx, sample, planText)
 	if err != nil {
-		return "", "", err
+		r.logger.Warn("get new plan digest failed; continuing without digest",
+			zap.String("schema", sample.Schema),
+			zap.String("explain_sql", "EXPLAIN "+sample.SQL),
+			zap.Error(err),
+		)
+		planDigest = "N/A"
 	}
 	return planText, planDigest, nil
 }
@@ -106,7 +112,7 @@ func (r *SQLRepository) executeExplainPlan(ctx context.Context, sample Sample) (
 		}
 	}
 
-	statement, arguments, err := convertToLegalSQL(sample.SQL)
+	statement, template, err := convertToLegalSQL(sample.SQL)
 	if err != nil {
 		return "", fmt.Errorf("parse prepared statement sample: %w", err)
 	}
@@ -115,8 +121,8 @@ func (r *SQLRepository) executeExplainPlan(ctx context.Context, sample Sample) (
 	}
 
 	explainSQL := "EXPLAIN " + statement
-	r.logger.Info("execute SQL", zap.String("schema", sample.Schema), zap.String("sql", explainSQL))
-	rows, err := conn.QueryContext(explainCtx, explainSQL, arguments...)
+	r.logger.Info("execute SQL", zap.String("schema", sample.Schema), zap.String("sql", "EXPLAIN "+template))
+	rows, err := conn.QueryContext(explainCtx, explainSQL)
 	if err != nil {
 		return "", util.NewStackErrorf("explain statement: %w", err)
 	}
@@ -141,45 +147,31 @@ func (r *SQLRepository) executeExplainPlan(ctx context.Context, sample Sample) (
 func (r *SQLRepository) GetNewPlanDigest(ctx context.Context, sample Sample, newPlan string) (string, error) {
 	digestCtx, cancel := context.WithTimeout(ctx, explainTimeout)
 	defer cancel()
-	explainSQL := "EXPLAIN " + sample.SQL
 
 	conn, err := r.db.Conn(digestCtx)
 	if err != nil {
-		return r.planDigestUnavailable(sample.Schema, explainSQL, util.NewStackErrorf("acquire connection for plan digest: %w", err))
+		return "", util.NewStackErrorf("acquire connection for plan digest: %w", err)
 	}
 	defer conn.Close()
 
 	if sample.Schema != "" {
 		useSQL := "USE `" + strings.ReplaceAll(sample.Schema, "`", "``") + "`"
 		if _, err := conn.ExecContext(digestCtx, useSQL); err != nil {
-			return r.planDigestUnavailable(sample.Schema, explainSQL, util.NewStackErrorf("select schema for plan digest %q: %w", sample.Schema, err))
+			return "", util.NewStackErrorf("select schema for plan digest: %w (sql=%q)", err, useSQL)
 		}
 	}
 	statement, _, err := convertToLegalSQL(sample.SQL)
 	if err != nil {
-		return r.planDigestUnavailable(sample.Schema, explainSQL, fmt.Errorf("parse prepared statement sample for plan digest: %w", err))
+		return "", fmt.Errorf("parse prepared statement sample for plan digest: %w", err)
 	}
-	explainSQL = "EXPLAIN " + statement
-	planDigest, err := r.getNewPlanDigest(digestCtx, conn, sample.Schema, explainSQL, newPlan)
-	if err != nil {
-		return r.planDigestUnavailable(sample.Schema, explainSQL, err)
-	}
-	return planDigest, nil
-}
-
-func (r *SQLRepository) planDigestUnavailable(schema, explainSQL string, err error) (string, error) {
-	r.logger.Warn("get new plan digest failed; continuing without digest",
-		zap.String("schema", schema),
-		zap.String("sql", explainSQL),
-		zap.Error(err),
-	)
-	return "N/A", nil
+	return r.getNewPlanDigest(digestCtx, conn, sample.Schema, "EXPLAIN "+statement, newPlan)
 }
 
 func (r *SQLRepository) getNewPlanDigest(ctx context.Context, conn *sql.Conn, schema, explainSQL, newPlan string) (string, error) {
-	rows, err := conn.QueryContext(ctx, explainPlanDigestQuery, schema, schema)
+	query := explainPlanDigestQuery(schema)
+	rows, err := conn.QueryContext(ctx, query)
 	if err != nil {
-		return "", util.NewStackErrorf("query EXPLAIN plan digest: %w", err)
+		return "", util.NewStackErrorf("query EXPLAIN plan digest: %w (sql=%q)", err, query)
 	}
 
 	defer rows.Close()

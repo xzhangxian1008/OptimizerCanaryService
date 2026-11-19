@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis/util"
 	"go.uber.org/zap"
 )
 
@@ -298,7 +299,6 @@ func (p *preparer) insertRows(ctx context.Context, table string, columns []strin
 			query.WriteString(quoteIdentifier(column))
 		}
 		query.WriteString(") VALUES ")
-		arguments := make([]any, 0, (end-start)*len(columns))
 		for i, row := range rows[start:end] {
 			if len(row) != len(columns) {
 				return fmt.Errorf("insert %s: row has %d values for %d columns", table, len(row), len(columns))
@@ -307,16 +307,19 @@ func (p *preparer) insertRows(ctx context.Context, table string, columns []strin
 				query.WriteByte(',')
 			}
 			query.WriteByte('(')
-			for j := range row {
+			for j, value := range row {
 				if j > 0 {
 					query.WriteByte(',')
 				}
-				query.WriteByte('?')
+				literal, err := util.SQLValueLiteral(value)
+				if err != nil {
+					return fmt.Errorf("insert %s row %d column %s: %w", table, start+i, columns[j], err)
+				}
+				query.WriteString(literal)
 			}
 			query.WriteByte(')')
-			arguments = append(arguments, row...)
 		}
-		if _, err := p.conn.ExecContext(ctx, query.String(), arguments...); err != nil {
+		if _, err := p.conn.ExecContext(ctx, query.String()); err != nil {
 			return fmt.Errorf("insert %s rows %d-%d: %w", table, start, end-1, err)
 		}
 	}

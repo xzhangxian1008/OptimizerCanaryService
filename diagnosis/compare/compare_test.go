@@ -2,8 +2,12 @@ package compare
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 type fakeCompareRepository struct {
@@ -32,6 +36,40 @@ func (f *fakeCompareRepository) ExplainPlan(_ context.Context, sample Sample) (s
 
 func (f *fakeCompareRepository) Bindings(_ context.Context, digest, _ string) (string, error) {
 	return f.bindings[digest], nil
+}
+
+func TestComparerLimitsWarningsAndContinues(t *testing.T) {
+	sample := Sample{Schema: "app", SQL: "SELECT * FROM t"}
+	repo := &fakeCompareRepository{
+		newPlans: map[Sample]string{sample: "id\ttask\nTableReader_1\troot"},
+	}
+	for i := range 3001 {
+		repo.statements = append(repo.statements, SQLInfo{
+			Sample: sample, SQLDigest: fmt.Sprintf("%08x", i), PlanDigest: "bad-plan", Plan: "invalid plan",
+		})
+	}
+	repo.statements = append(repo.statements, SQLInfo{
+		Sample: sample, SQLDigest: "ffffffff", PlanDigest: "old-plan", Plan: "id\ttask\nIndexReader_1\troot",
+	})
+
+	core, logs := observer.New(zap.WarnLevel)
+	comparer := NewComparer(repo, zap.New(core))
+	for range 2 {
+		report, err := comparer.Compare(context.Background())
+		if err != nil {
+			t.Fatalf("Compare returned error: %v", err)
+		}
+		if !strings.Contains(report, "- SQLs with Plan Changes: 1\n") || !strings.Contains(report, "## SQL: ffffffff") {
+			t.Fatalf("expected a plan change after the last failed comparison: %s", report)
+		}
+		entries := logs.TakeAll()
+		if len(entries) != 3000 {
+			t.Fatalf("logged %d warnings, want 3000", len(entries))
+		}
+		if entries[0].Level != zap.WarnLevel || entries[0].ContextMap()["sql_digest"] != "00000000" {
+			t.Fatalf("unexpected first warning: %+v", entries[0])
+		}
+	}
 }
 
 func TestComparerOnlyReportsChangedIDAndTask(t *testing.T) {
@@ -188,6 +226,19 @@ func TestNormalizeExplainSQLOnlyConvertsDoubleQuotedStringValues(t *testing.T) {
 	want := `explain select "column" from t where name = 'O'Reilly' and note = 'a "quote"'`
 	if got != want {
 		t.Fatalf("normalizeExplainSQL() = %q, want %q", got, want)
+	}
+}
+
+func TestConvertToLegalSQLFillsOnlyParameterMarkers(t *testing.T) {
+	template := "SELECT '?' AS `?`, ?, ?, ?, ?, ?, ? /* ? */ FROM t LIMIT ?"
+	sample := template + ` [arguments: ("a'\\测", NULL, 0x00ff, 18446744073709551615, 1.5, -4, 20)]`
+	want := "SELECT '?' AS `?`,  _utf8mb4 X'61275ce6b58b' ,  NULL ,  X'00ff' ,  18446744073709551615 ,  1.5e0 ,  -4  /* ? */ FROM t LIMIT  20"
+	got, gotTemplate, err := convertToLegalSQL(sample)
+	if err != nil || got != want || gotTemplate != template {
+		t.Fatalf("convertToLegalSQL() = %q, %q, %v, want %q, %q, nil", got, gotTemplate, err, want, template)
+	}
+	if _, _, err := convertToLegalSQL("SELECT ?, '?' [arguments: (1, 2)]"); err == nil {
+		t.Fatal("expected an error when the argument count differs from the parameter count")
 	}
 }
 

@@ -3,11 +3,15 @@ package compare
 import (
 	"database/sql"
 	"encoding/hex"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 	"unicode"
 
+	"github.com/pingcap/tidb/pkg/parser"
+	"github.com/pingcap/tidb/pkg/parser/ast"
+	"github.com/pingcap/tidb/pkg/parser/test_driver"
 	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis/util"
 )
 
@@ -31,20 +35,25 @@ WHERE LOWER(stmt_type) = 'select'
   AND LOWER(query_sample_text) NOT LIKE 'select @@version_comment%'
 ORDER BY digest, schema_name, plan_digest, instance`
 
-const compareBindingsQuery = `SELECT original_sql, bind_sql, default_db, status,
+func compareBindingsQuery(digest, schema string) string {
+	return `SELECT original_sql, bind_sql, default_db, status,
        create_time, update_time, charset, collation, source, sql_digest, plan_digest
 FROM mysql.bind_info
-WHERE sql_digest = ? AND status <> 'deleted'
-  AND (default_db = ? OR default_db = '')
+WHERE sql_digest = ` + util.SQLStringLiteral(digest) + ` AND status <> 'deleted'
+  AND (default_db = ` + util.SQLStringLiteral(schema) + ` OR default_db = '')
 ORDER BY update_time, bind_sql`
+}
 
-const explainPlanDigestQuery = `SELECT COALESCE(query_sample_text, ''), COALESCE(plan_digest, ''), COALESCE(plan, '')
+func explainPlanDigestQuery(schema string) string {
+	schemaLiteral := util.SQLStringLiteral(schema)
+	return `SELECT COALESCE(query_sample_text, ''), COALESCE(plan_digest, ''), COALESCE(plan, '')
 FROM information_schema.statements_summary
 WHERE LOWER(stmt_type) IN ('explainsql', 'explain')
-  AND (? = '' OR COALESCE(schema_name, '') = ?)
+  AND (` + schemaLiteral + ` = '' OR COALESCE(schema_name, '') = ` + schemaLiteral + `)
   AND plan_digest IS NOT NULL AND plan_digest <> ''
   AND plan IS NOT NULL AND plan <> ''
 ORDER BY summary_end_time DESC`
+}
 
 func normalizeExplainSQL(sqlText string) string {
 	var normalized strings.Builder
@@ -121,35 +130,72 @@ func isDoubleQuotedStringStart(sqlText string, index int) bool {
 	}
 }
 
-// convertToLegalSQL removes the annotation TiDB appends to a server-side
-// prepared statement in QUERY_SAMPLE_TEXT and turns its values into database
-// parameters. For example:
-//
-//	SELECT * FROM t WHERE id = ? [arguments: 42]
-//
-// becomes EXPLAIN SELECT * FROM t WHERE id = ? with one bound argument. Sending
-// the values as database parameters preserves their types and avoids quoting
-// mistakes when a value contains SQL punctuation.
-func convertToLegalSQL(sample string) (string, []any, error) {
+// convertToLegalSQL fills the placeholders in TiDB's prepared-statement sample
+// with the values from its trailing arguments annotation.
+func convertToLegalSQL(sample string) (statement, template string, err error) {
 	sample = strings.TrimSpace(sample)
 	marker := "[arguments:"
 	markerIndex := strings.LastIndex(sample, marker)
 	if markerIndex <= 0 || !unicode.IsSpace(rune(sample[markerIndex-1])) {
-		return strings.TrimSuffix(sample, ";"), nil, nil
+		statement = strings.TrimSuffix(sample, ";")
+		return statement, statement, nil
 	}
 
-	statement := strings.TrimSpace(sample[:markerIndex])
+	template = strings.TrimSuffix(strings.TrimSpace(sample[:markerIndex]), ";")
 	argumentText := strings.TrimSpace(sample[markerIndex+len(marker):])
 	argumentText = strings.TrimSpace(strings.TrimSuffix(argumentText, ";"))
 	if !strings.HasSuffix(argumentText, "]") {
-		return "", nil, util.NewStackErrorf("arguments annotation is not closed")
+		return "", "", util.NewStackErrorf("arguments annotation is not closed")
 	}
 	argumentText = strings.TrimSpace(strings.TrimSuffix(argumentText, "]"))
 	arguments, err := parseTiDBArguments(argumentText)
 	if err != nil {
-		return "", nil, err
+		return "", "", err
 	}
-	return strings.TrimSuffix(strings.TrimSpace(statement), ";"), arguments, nil
+	statement, err = fillSQLParameters(template, arguments)
+	return statement, template, err
+}
+
+type parameterOffsets []int
+
+func (offsets *parameterOffsets) Enter(node ast.Node) (ast.Node, bool) {
+	if marker, ok := node.(*test_driver.ParamMarkerExpr); ok {
+		*offsets = append(*offsets, marker.Offset)
+	}
+	return node, false
+}
+
+func (*parameterOffsets) Leave(node ast.Node) (ast.Node, bool) { return node, true }
+
+func fillSQLParameters(statement string, arguments []any) (string, error) {
+	parsed, err := parser.New().ParseOneStmt(statement, "", "")
+	if err != nil {
+		return "", util.NewStackErrorf("parse SQL parameter markers: %w", err)
+	}
+	var offsets parameterOffsets
+	parsed.Accept(&offsets)
+	if len(offsets) != len(arguments) {
+		return "", util.NewStackErrorf("SQL has %d parameter markers for %d arguments", len(offsets), len(arguments))
+	}
+	slices.Sort(offsets)
+	var query strings.Builder
+	start := 0
+	for i, offset := range offsets {
+		if offset < start || offset >= len(statement) || statement[offset] != '?' {
+			return "", util.NewStackErrorf("invalid SQL parameter marker offset %d", offset)
+		}
+		literal, err := util.SQLValueLiteral(arguments[i])
+		if err != nil {
+			return "", err
+		}
+		query.WriteString(statement[start:offset])
+		query.WriteByte(' ')
+		query.WriteString(literal)
+		query.WriteByte(' ')
+		start = offset + 1
+	}
+	query.WriteString(statement[start:])
+	return strings.TrimSpace(query.String()), nil
 }
 
 func parseTiDBArguments(text string) ([]any, error) {

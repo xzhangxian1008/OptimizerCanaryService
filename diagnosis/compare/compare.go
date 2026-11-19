@@ -12,7 +12,10 @@ import (
 
 	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis/redact"
 	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis/util"
+	"go.uber.org/zap"
 )
+
+const compareMaxWarningLogCnt = 3000
 
 // SQLInfo contains sql info recorded in the `information_schema.cluster_statement_summary` table.
 // However, it contains only part of the info in one row.
@@ -37,10 +40,15 @@ type planDigestRepository interface {
 
 type Comparer struct {
 	repository CompareRepository
+	logger     *zap.Logger
 }
 
-func NewComparer(repository CompareRepository) *Comparer {
-	return &Comparer{repository: repository}
+func NewComparer(repository CompareRepository, loggers ...*zap.Logger) *Comparer {
+	logger := zap.L()
+	if len(loggers) > 0 && loggers[0] != nil {
+		logger = loggers[0]
+	}
+	return &Comparer{repository: repository, logger: logger}
 }
 
 type PlanNode struct {
@@ -405,6 +413,19 @@ func (c *Comparer) Compare(ctx context.Context) (string, error) {
 	var totalExecCount uint64
 	var changed []comparedPlan
 
+	currentWarningLogCnt := 0
+	warn := func(sqlInfo SQLInfo, operation string, err error) {
+		if currentWarningLogCnt < compareMaxWarningLogCnt {
+			c.logger.Warn(operation,
+				zap.String("schema", sqlInfo.Schema),
+				zap.String("sql_digest", sqlInfo.SQLDigest),
+				zap.String("plan_digest", sqlInfo.PlanDigest),
+				zap.Error(err),
+			)
+			currentWarningLogCnt++
+		}
+	}
+
 	for _, sqlInfo := range sqlInfos {
 		totalExecCount += sqlInfo.ExecCount
 
@@ -412,22 +433,24 @@ func (c *Comparer) Compare(ctx context.Context) (string, error) {
 		checkedSQLs[key] = struct{}{}
 
 		if err := ctx.Err(); err != nil {
-			return "", err
+			warn(sqlInfo, "check comparison context", err)
+			continue
 		}
 
 		// Get current plan
 		currentPlan, err := parsePlan(sqlInfo.Plan)
 		if err != nil {
-			return "", fmt.Errorf("SQL digest %s, plan digest %s: read current plan: %w", sqlInfo.SQLDigest, sqlInfo.PlanDigest, err)
+			warn(sqlInfo, "read current plan", err)
+			continue
 		}
 
 		// Get new plan
 		newPlan, ok := explained[sqlInfo.Sample]
 		if !ok {
 			newPlan.plan, err = c.repository.ExplainPlan(ctx, sqlInfo.Sample)
-
 			if err != nil {
-				return "", fmt.Errorf("SQL digest %s: %w", sqlInfo.SQLDigest, err)
+				warn(sqlInfo, "explain new plan", err)
+				continue
 			}
 
 			explained[sqlInfo.Sample] = newPlan
@@ -435,7 +458,8 @@ func (c *Comparer) Compare(ctx context.Context) (string, error) {
 
 		newPlanParsed, err := parsePlan(newPlan.plan)
 		if err != nil {
-			return "", fmt.Errorf("SQL digest %s: read new plan: %w", sqlInfo.SQLDigest, err)
+			warn(sqlInfo, "read new plan", err)
+			continue
 		}
 
 		equal, planChange := comparePlans(currentPlan, newPlanParsed)
@@ -447,7 +471,8 @@ func (c *Comparer) Compare(ctx context.Context) (string, error) {
 		if repository, ok := c.repository.(planDigestRepository); ok {
 			newPlan.digest, err = repository.GetNewPlanDigest(ctx, sqlInfo.Sample, newPlan.plan)
 			if err != nil {
-				return "", fmt.Errorf("SQL digest %s: get new plan digest: %w", sqlInfo.SQLDigest, err)
+				warn(sqlInfo, "get new plan digest", err)
+				continue
 			}
 		} else {
 			// Repositories that only provide EXPLAIN text are mainly useful
@@ -457,7 +482,8 @@ func (c *Comparer) Compare(ctx context.Context) (string, error) {
 
 		binding, err := getCurrentPlanBinding(sqlInfo.SQL, sqlInfo.PlanHint)
 		if err != nil {
-			return "", fmt.Errorf("SQL digest %s: build current plan binding: %w", sqlInfo.SQLDigest, err)
+			warn(sqlInfo, "build current plan binding", err)
+			continue
 		}
 
 		changed = append(changed, comparedPlan{
