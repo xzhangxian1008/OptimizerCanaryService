@@ -105,7 +105,7 @@ func (r *SQLRepository) executeExplainPlan(ctx context.Context, sample Sample) (
 
 	if sample.Schema != "" {
 		useSQL := "USE `" + strings.ReplaceAll(sample.Schema, "`", "``") + "`"
-		r.logger.Info("execute SQL", zap.String("sql", useSQL))
+		r.logger.Debug("execute SQL", zap.String("sql", useSQL))
 
 		if _, err := conn.ExecContext(explainCtx, useSQL); err != nil {
 			return "", util.NewStackErrorf("select schema %q: %w", sample.Schema, err)
@@ -121,7 +121,7 @@ func (r *SQLRepository) executeExplainPlan(ctx context.Context, sample Sample) (
 	}
 
 	explainSQL := "EXPLAIN " + statement
-	r.logger.Info("execute SQL", zap.String("schema", sample.Schema), zap.String("sql", "EXPLAIN "+template))
+	r.logger.Debug("execute SQL", zap.String("schema", sample.Schema), zap.String("sql", "EXPLAIN "+template))
 	rows, err := conn.QueryContext(explainCtx, explainSQL)
 	if err != nil {
 		return "", util.NewStackErrorf("explain statement: %w", err)
