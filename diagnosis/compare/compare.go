@@ -585,8 +585,9 @@ func renderComparison(plans []comparedPlan, summary reportSummary) string {
 		currentAnchor := uniqueHeadingAnchor("current-plan-"+sqlDigestPrefix+"-"+currentPlanPrefix, anchors)
 		newAnchor := uniqueHeadingAnchor("new-plan-"+sqlDigestPrefix+"-"+newPlanPrefix, anchors)
 		bindingAnchor := uniqueHeadingAnchor("binding-stmt-"+sqlDigestPrefix+"-"+currentPlanPrefix, anchors)
-		currentAnchor = writeDetailWithAnchor(details, currentAnchor, currentTitle, statement, statement.PlanDigest, redact.DisplayPlanWithSQL(withoutPlanColumns(statement.Plan, "actRows", "execution info", "memory", "disk"), statement.SQL, statement.Schema))
-		newAnchor = writeDetailWithAnchor(details, newAnchor, newTitle, statement, plan.newPlanDigest, redact.DisplayPlanWithSQL(plan.newPlan, statement.SQL, statement.Schema))
+		currentPlan := withoutPlanColumns(statement.Plan, "actRows", "execution info", "memory", "disk")
+		currentAnchor = writeDetailWithAnchor(details, currentAnchor, currentTitle, statement, statement.PlanDigest, redact.DisplayAlignedPlanWithSQL(currentPlan, statement.SQL, statement.Schema))
+		newAnchor = writeDetailWithAnchor(details, newAnchor, newTitle, statement, plan.newPlanDigest, redact.DisplayAlignedPlanWithSQL(plan.newPlan, statement.SQL, statement.Schema))
 		bindingText := plan.bindings
 		if bindingText == "" {
 			bindingText = "No PLAN_HINT available."

@@ -25,6 +25,11 @@ func DisplayPlanWithSQL(text, sqlText, schema string) string {
 	return value
 }
 
+// DisplayAlignedPlanWithSQL formats a redacted plan for a monospace report.
+func DisplayAlignedPlanWithSQL(text, sqlText, schema string) string {
+	return alignPlanColumns(DisplayPlanWithSQL(text, sqlText, schema))
+}
+
 func DisplayBinding(original, hinted string) string {
 	value, err := Binding(original, hinted)
 	if err != nil {

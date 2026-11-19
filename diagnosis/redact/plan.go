@@ -76,10 +76,11 @@ func plan(text string, identifiers map[string]bool) (string, error) {
 			return "", errUnsafePlan
 		}
 		for i, cell := range cells {
+			if kinds[i] == "id" {
+				continue
+			}
 			value := strings.TrimSpace(cell)
 			switch {
-			case kinds[i] == "id" && planID.MatchString(cell):
-				cells[i] = cell
 			case kinds[i] == "task" && planTask.MatchString(value):
 				cells[i] = value
 			case kinds[i] == "number" && planNumber.MatchString(value):

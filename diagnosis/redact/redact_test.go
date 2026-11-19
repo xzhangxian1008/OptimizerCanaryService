@@ -106,6 +106,18 @@ func TestPlanHandlesFormattingTabAndEmptyLastColumn(t *testing.T) {
 	}
 }
 
+func TestDisplayPlanPreservesIDColumnVerbatim(t *testing.T) {
+	input := "id\ttask\toperator info\n" +
+		"Projection\troot\teq(secret, 123)\n" +
+		"└─TableReader_7(Build)  \troot\trange:[123,456]"
+	want := "id\ttask\toperator info\n" +
+		"Projection\troot\teq(?, ?)\n" +
+		"└─TableReader_7(Build)  \troot\trange:[?,?]"
+	if got := DisplayPlanWithSQL(input, "SELECT 1", "app"); got != want {
+		t.Fatalf("DisplayPlanWithSQL() = %q, want %q", got, want)
+	}
+}
+
 func TestPlanPreservesIdentifiersAndRedactsRanges(t *testing.T) {
 	plan := "id\ttask\taccess object\toperator info\n" +
 		"IndexRangeScan_4\tcop[tikv]\ttable:orders, index:idx_customer(customer_id, status)\trange:[123 456,123 456], keep order:false"

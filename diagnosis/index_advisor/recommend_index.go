@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/xzhangxian1008/OptimizerCanaryService/diagnosis/compare"
@@ -545,11 +544,12 @@ func RenderRecommendIndex(results []RecommendIndexResult) string {
 			report.WriteString("#### Create Index Statement\n\n")
 			writeRecommendSQLBlock(&report, redact.DisplaySQL(advice.createStatement))
 			report.WriteString("\n#### Old Plan\n\n")
-			writePlanBlock(&report, alignPlanColumns(redact.DisplayPlanWithSQL(compare.WithoutPlanColumns(result.OldPlan, "actRows", "execution info", "memory", "disk"), result.SQL, result.Schema)))
+			oldPlan := compare.WithoutPlanColumns(result.OldPlan, "actRows", "execution info", "memory", "disk")
+			writePlanBlock(&report, redact.DisplayAlignedPlanWithSQL(oldPlan, result.SQL, result.Schema))
 			report.WriteString("\n#### New Plan\n\n")
 			writeRecommendSQLBlock(&report, redact.DisplaySQL(advice.newSQL))
 			report.WriteString("\n")
-			writePlanBlock(&report, alignPlanColumns(redact.DisplayPlanWithSQL(advice.newPlan, result.SQL, result.Schema)))
+			writePlanBlock(&report, redact.DisplayAlignedPlanWithSQL(advice.newPlan, result.SQL, result.Schema))
 		}
 
 	}
@@ -578,38 +578,6 @@ func writePlanBlock(out *strings.Builder, plan string) {
 	out.WriteString("<pre style=\"white-space: pre; overflow-x: auto; max-width: 100%;\"><code style=\"white-space: pre; overflow-wrap: normal; word-break: normal;\">")
 	out.WriteString(html.EscapeString(plan))
 	out.WriteString("</code></pre>\n")
-}
-
-// alignPlanColumns replaces tab separators with padding based on the widest
-// value in each column. Leading spaces in operator IDs retain the plan tree.
-func alignPlanColumns(plan string) string {
-	lines := strings.Split(plan, "\n")
-	rows := make([][]string, len(lines))
-	var widths []int
-	for i, line := range lines {
-		rows[i] = strings.Split(line, "\t")
-		for j, value := range rows[i] {
-			value = strings.TrimRight(value, " ")
-			rows[i][j] = value
-			if j >= len(widths) {
-				widths = append(widths, 0)
-			}
-			widths[j] = max(widths[j], utf8.RuneCountInString(value))
-		}
-	}
-	var out strings.Builder
-	for i, row := range rows {
-		if i > 0 {
-			out.WriteByte('\n')
-		}
-		for j, value := range row {
-			out.WriteString(value)
-			if j < len(row)-1 {
-				out.WriteString(strings.Repeat(" ", widths[j]-utf8.RuneCountInString(value)+2))
-			}
-		}
-	}
-	return out.String()
 }
 
 // Each advisor invocation analyzes one SQL. For multiple recommendations,

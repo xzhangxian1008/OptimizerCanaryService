@@ -194,15 +194,35 @@ func TestPlanIndentationAndOverview(t *testing.T) {
 	}
 }
 
-func TestAlignPlanColumns(t *testing.T) {
-	input := "id\testRows\ttask\taccess object\nProjection_7\t1.00\troot\t\n  └─IndexRangeScan_14\t100.00\tcop[tikv]\ttable:t"
-	got := alignPlanColumns(input)
-	want := "id                     estRows  task       access object\nProjection_7           1.00     root       \n  └─IndexRangeScan_14  100.00   cop[tikv]  table:t"
-	if got != want {
-		t.Fatalf("unexpected alignment:\n%s\nwant:\n%s", got, want)
-	}
-	if strings.Contains(got, "\t") {
-		t.Fatal("plan still contains tabs")
+func TestRecommendIndexReportAlignsPlanColumns(t *testing.T) {
+	oldPlan := "id\testRows\ttask\taccess object\toperator info\n" +
+		"Selection_7\t1.00\troot\t\tkeep order:false\n" +
+		"└─IndexReader_13\t100.00\troot\t\tkeep order:false\n" +
+		"  ├─IndexRangeScan_14\t100.00\tcop[tikv]\ttable:订单明细表\tkeep order:true\n" +
+		"  └─IndexRangeScan_15\t10.00\tcop[tikv]\ttable:t\tkeep order:true"
+	want := "id                     estRows  task       access object     operator info\n" +
+		"Selection_7            1.00     root                         keep order:false\n" +
+		"└─IndexReader_13       100.00   root                         keep order:false\n" +
+		"  ├─IndexRangeScan_14  100.00   cop[tikv]  table:订单明细表  keep order:true\n" +
+		"  └─IndexRangeScan_15  10.00    cop[tikv]  table:t           keep order:true"
+	report := RenderRecommendIndex([]RecommendIndexResult{{
+		Schema:  "app",
+		SQL:     "SELECT * FROM t",
+		Digest:  "abcdefgh123",
+		OldPlan: oldPlan,
+		Recommendations: []IndexRecommendation{{
+			newPlan: strings.Replace(oldPlan, "Selection_7", "TableScan_7", 1),
+		}},
+	}})
+	for _, check := range []struct{ heading, plan string }{
+		{"#### Old Plan\n", want},
+		{"#### New Plan\n", strings.Replace(want, "Selection_7", "TableScan_7", 1)},
+	} {
+		_, section, found := strings.Cut(report, check.heading)
+		section, _, _ = strings.Cut(section, "\n#### ")
+		if !found || !strings.Contains(section, ">"+check.plan+"</code></pre>") {
+			t.Errorf("%s has misaligned columns:\n%s\nwant:\n%s", strings.TrimSpace(check.heading), section, check.plan)
+		}
 	}
 }
 

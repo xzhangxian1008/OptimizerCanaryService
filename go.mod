@@ -6,6 +6,7 @@ require (
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/pingcap/tidb/pkg/parser v0.0.0-20240821094219-38f9d702ff6d
 	go.uber.org/zap v1.28.0
+	golang.org/x/text v0.14.0
 )
 
 require (
@@ -18,6 +19,5 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/exp v0.0.0-20240205201215-2c58cdc269a3 // indirect
-	golang.org/x/text v0.14.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 )

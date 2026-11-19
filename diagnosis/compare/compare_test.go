@@ -116,6 +116,38 @@ func TestComparerOnlyReportsChangedIDAndTask(t *testing.T) {
 	}
 }
 
+func TestCompareReportAlignsPlanColumns(t *testing.T) {
+	currentPlan := "id\testRows\ttask\taccess object\toperator info\n" +
+		"Selection_7\t1.00\troot\t\tkeep order:false\n" +
+		"└─IndexReader_13\t100.00\troot\t\tkeep order:false\n" +
+		"  ├─IndexRangeScan_14\t100.00\tcop[tikv]\ttable:订单明细表\tkeep order:true\n" +
+		"  └─IndexRangeScan_15\t10.00\tcop[tikv]\ttable:t\tkeep order:true"
+	want := "id                     estRows  task       access object     operator info\n" +
+		"Selection_7            1.00     root                         keep order:false\n" +
+		"└─IndexReader_13       100.00   root                         keep order:false\n" +
+		"  ├─IndexRangeScan_14  100.00   cop[tikv]  table:订单明细表  keep order:true\n" +
+		"  └─IndexRangeScan_15  10.00    cop[tikv]  table:t           keep order:true"
+	sample := Sample{Schema: "app", SQL: "SELECT * FROM t"}
+	repo := &fakeCompareRepository{
+		statements: []SQLInfo{{Sample: sample, SQLDigest: "12345678", PlanDigest: "abcdefgh", Plan: currentPlan}},
+		newPlans:   map[Sample]string{sample: strings.Replace(currentPlan, "Selection_7", "TableScan_7", 1)},
+	}
+	report, err := NewComparer(repo).Compare(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, check := range []struct{ heading, plan string }{
+		{"### Current Plan: ", want},
+		{"### New Plan: ", strings.Replace(want, "Selection_7", "TableScan_7", 1)},
+	} {
+		_, section, found := strings.Cut(report, check.heading)
+		section, _, _ = strings.Cut(section, "\n### ")
+		if !found || !strings.Contains(section, "```text\n"+check.plan+"\n```") {
+			t.Errorf("%s has misaligned columns:\n%s\nwant:\n%s", check.heading, section, check.plan)
+		}
+	}
+}
+
 func TestPlanOperatorsSupportsWhitespacePlans(t *testing.T) {
 	operators, err := parsePlan("id task estRows\n└─TableReader_1 root 1")
 	if err != nil {
